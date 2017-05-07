@@ -1,4 +1,4 @@
-# StackMaps - Server
+# Stack Maps - Server
 This repository contains code to set up a server to manage and display where particular books in the library are. In essence, there are three parts: the database holding library floor information, a script for updating and querying the database, and a snippet to render and display the location of a particular book on a map in the browser.
 
 Below are instructions on how to set up a working server.
