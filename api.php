@@ -28,6 +28,8 @@
         getLibraryList();
     } else if ($_POST['request'] === 'getFloorList') {
         getFloorList();
+    } else if ($_POST['request'] === 'getBookLocation') {
+        getBookLocation();
     } else if ($_POST['request'] === 'createLibrary') {
         createLibrary();
     } else if ($_POST['request'] === 'createFloor') {
