@@ -15,4 +15,4 @@ The access API acts as the getter/setter of the database. It provides an extra l
 The map is what library patrons see when they click on a button. We wrap the map in a javascript file and provide a sample HTML page. To set this up, the javascript file should be uploaded to the same directory of wherever the actual MAP button is in the library catalogs, and in that HTML page, this javascript file should be imported, and the `displayMap(callno)` function should be called when the button is pressed.
 
 ## Map Editor
-Once the server set up is complete, we need to create some library floor plans to actually use this system. Details of the map editor can be found in the accompanying repoistory [here](https://github.com/stack-maps/map-editor).
+Once the server set up is complete, we need to create some library floor plans to actually use this system. Details of the map editor can be found in the accompanying repository [here](https://github.com/stack-maps/map-editor).
