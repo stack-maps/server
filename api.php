@@ -93,7 +93,7 @@
      */
     function getLibraryList() {
         // This will look somewhat similar to the code below.
-        $sql = "SELECT lid, name FROM library";
+        $sql = "SELECT lid, name FROM Library";
         echo json_encode(getData($sql));
     }
     
@@ -112,7 +112,7 @@
         }
         
         // This will look somewhat similar to the code below.
-        $sql = "SELECT * FROM floor WHERE lid = $libId";
+        $sql = "SELECT * FROM Floor WHERE lid = $libId";
         echo json_encode(getData($sql));
     }
     
@@ -127,9 +127,39 @@
      */
     function getBookLocation() {
         $callNo = $_POST['callno'];
-        $libName = $_POST['library'];
+        $libName = $_POST['libname'];
         
         // TODO.
+
+        // first find all call number ranges in this library
+        $table = mysql_query("SELECT f.fid, f.name, a.aid, a.call_range 
+                              FROM Aisle a WHERE a.aislearea = aa.aaid 
+                              FROM AisleArea aa WHERE aa.floor = f.name 
+                              FROM Floor f WHERE f.library = $libName");
+
+        // go through all call_range
+        while($range_string = mysql_fetch_assoc($table)){
+            // in each Aisle area, call number ranges are separated by ";"
+            $call_range = mysql_query("SELECT call_range FROM $range_string");
+            $range_pieces = explode(";", $call_range);
+            foreach ($range_pieces as &$value){
+                // call number ranges and side are separated by "|" and "-"
+                // for example, left_range - right range | side A
+                $single_range = explode("|", $range_pieces);
+                $range = explode("-",$single_range[0]);
+                $left = $range[0];
+                $right = $range[1];
+                if($left < $callNo and $callNo < $right){
+                    echo json_encode(getData($range_string));
+                }
+            }
+        }
+
+        // Don't find the book on all aisles
+        $error_msg = "The book is not found";
+        error($error_msg);
+
+        
     }
     
     
@@ -142,9 +172,12 @@
     function createLibrary() {
         checkToken();
         
-        $libName = $_POST['name'];
+        $libName = $_POST['libname'];
         
         // TODO: create a new library and echo the id.
+        $sql = "INSERT INTO Library (name) VALUES ($libName)";
+        $id = "SELECT lid FROM Library WHERE name = $libName";
+        echo json_encode(getData($id));
     }
     
     
@@ -157,9 +190,13 @@
     function createFloor() {
         checkToken();
         
-        $floorName = $_POST['name'];
+        $floorName = $_POST['floorname'];
+        $libName = $_POST['libname'];
         
         // TODO: create a new floor in the library and echo the id.
+        $sql = "INSERT INTO Floor (name) VALUES ($floorName)";
+        $id = "SELECT fid FROM Floor WHERE name = $floorName AND library = libname";
+        echo json_encode(getData($id));
     }
     
     
@@ -175,6 +212,8 @@
         $libId = $_POST['lid'];
         
         // TODO: updates the library with the given id with the new name.
+        $sql = "UPDATE Library SET name = libName WHERE lid = $libId"
+        echo json_encode(getData($sql));
     }
     
     
@@ -494,3 +533,4 @@
         echo json_encode(getData($sql));
     }
 ?>
+
