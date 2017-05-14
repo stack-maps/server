@@ -12,8 +12,9 @@
      */
     $DB_HOST = "localhost";
     $DB_PORT = "3306";
-    $DB_USER = "admin";
-    $DB_PASSWORD = "admin";
+    $DB_USER = "zhenfwwh_stack-map-admin";
+    $DB_PASSWORD = "stack-map-admin";
+    $DB_NAME = "zhenfwwh_stack-map";
 
     // The main logic of the execution starts here.
     if (!isset( $_POST['request']) || empty($_POST['request'])) {
@@ -39,6 +40,7 @@
     } else if ($_POST['request'] === 'updateFloor') {
         updateFloor();
     } else {
+        echo "beginning";
         error("Invalid request.");
     }
 
@@ -57,6 +59,8 @@
         $username = $_POST['username'];
         $password = $_POST['password'];
 
+        echo "login";
+
         // Performs custom validation. By default we have a username and
         // password in the database.
 
@@ -69,10 +73,23 @@
         // generating until we get no collisions.
         $exists = FALSE; // TODO: replace with actual db check.
 
-        while ($exists) {
+        $sql = "SELECT * FROM Users WHERE username = $username AND password = $password";
+        $query = getData($sql);
+
+        echo "query";
+        /*
+        while (mysql_num_rows($query) != 0) {
             $token = bin2hex(openssl_random_pseudo_bytes(32));
+            $expiration = time() + 2000;
             $exists = FALSE; // TODO: replace with actual db check.
         }
+        */
+
+        $expiration = time();
+        echo $expiration;
+        echo "expiration";
+        $sql = "INSERT INTO Token (token, expiration) VALUES ('$token', now())";
+        runQuery($sql);
 
         // Store this token to the database along with a validity duration.
 
@@ -93,7 +110,7 @@
      */
     function getLibraryList() {
         // This will look somewhat similar to the code below.
-        $sql = "SELECT lid, name FROM Library";
+        $sql = "SELECT lid FROM Library";
         echo json_encode(getData($sql));
     }
 
@@ -107,12 +124,8 @@
     function getFloorList() {
         $libId = $_POST['lid'];
 
-        if (!is_int($libId)) {
-            error("Invalid request.");
-        }
-
         // This will look somewhat similar to the code below.
-        $sql = "SELECT * FROM Floor WHERE lid = $libId";
+        $sql = "SELECT * FROM Floor WHERE library = $libId";
         echo json_encode(getData($sql));
     }
 
@@ -132,33 +145,22 @@
         // TODO.
 
         // first find all call number ranges in this library
-        $table = mysql_query("SELECT f.fid, f.name, a.aid, a.call_range
-                              FROM Aisle a WHERE a.aislearea = aa.aaid
-                              FROM AisleArea aa WHERE aa.floor = f.name
-                              FROM Floor f WHERE f.library = $libName");
 
-        // go through all call_range
-        while($range_string = mysql_fetch_assoc($table)){
-            // in each Aisle area, call number ranges are separated by ";"
-            $call_range = mysql_query("SELECT call_range FROM $range_string");
-            $range_pieces = explode(";", $call_range);
-            foreach ($range_pieces as &$value){
-                // call number ranges and side are separated by "|" and "-"
-                // for example, left_range - right range | side A
-                $single_range = explode("|", $range_pieces);
-                $range = explode("-",$single_range[0]);
-                $left = $range[0];
-                $right = $range[1];
-                if($left < $callNo and $callNo < $right){
-                    echo json_encode(getData($range_string));
-                }
-            }
+        $sql = "SELECT cr.aisle FROM Call_Range cr WHERE
+                (cr.callstart <= '$callNo' and cr.callend >= '$callNo') and
+                cr.aisle IN
+                (SELECT a.aid FROM Aisle a WHERE a.floor IN
+                (SELECT f.fid FROM Floor f WHERE f.library
+                IN (SELECT l.lid FROM Library l WHERE l.lname = '$libName'
+                )))";
+        $result = getData($sql);
+        if(count($result) != 1){
+          error("The book is not found");
         }
-
-        // Don't find the book on all aisles
-        $error_msg = "The book is not found";
-        error($error_msg);
-
+        $aid = $result[0]->aisle;
+        $sql = "SELECT floor FROM Aisle WHERE aid = $aid";
+        $fid = getData($sql)[0]->floor;
+        echo $fid;
 
     }
 
@@ -175,9 +177,18 @@
         $libName = $_POST['libname'];
 
         // TODO: create a new library and echo the id.
-        $sql = "INSERT INTO Library (name) VALUES ($libName)";
-        $id = "SELECT lid FROM Library WHERE name = $libName";
-        echo json_encode(getData($id));
+        $sql = "INSERT INTO Library (lname) VALUES ('$libName')";
+        //echo $sql;
+        runQuery($sql);
+        $id = "SELECT lid FROM Library WHERE lname = '$libName'";
+        $id_result = getData($id);
+        $ans = $id_result[0];
+
+        $success = TRUE;
+        $response['success'] = $success;
+        $response['id'] = $ans->lid;
+
+        echo json_encode($response);
     }
 
 
@@ -192,10 +203,17 @@
 
         $floorName = $_POST['floorname'];
         $libName = $_POST['libname'];
+        $forder = $_POST['forder'];
+        echo "createfloor";
+        $sql = "SELECT lid FROM Library WHERE lname = '$libName'";
+        $lid = getData($sql)[0]->lid;
+        echo "lid";
+        echo $lid;
 
         // TODO: create a new floor in the library and echo the id.
-        $sql = "INSERT INTO Floor (name) VALUES ($floorName)";
-        $id = "SELECT fid FROM Floor WHERE name = $floorName AND library = libname";
+        $sql = "INSERT INTO Floor (fname, forder, library) VALUES ('$floorName', '$forder', '$lid')";
+        runQuery($sql);
+        $id = "SELECT fid FROM Floor WHERE name = '$floorName' AND library = '$libname' ";
         echo json_encode(getData($id));
     }
 
@@ -208,11 +226,11 @@
     function updateLibrary() {
         checkToken();
 
-        $libName = $_POST['name'];
+        $libName = $_POST['libname'];
         $libId = $_POST['lid'];
 
         // TODO: updates the library with the given id with the new name.
-        $sql = "UPDATE Library SET name = libName WHERE lid = $libId"
+        $sql = "UPDATE Library SET lname = '$libName' WHERE lid = $libId";
         echo json_encode(getData($sql));
     }
 
@@ -226,12 +244,124 @@
         checkToken();
 
         $floorId = $_POST['fid'];
+        $info = $_POST['floor_stuff'];
 
         // TODO: this is probably the longest function in the file. A floor
         // consists of walls, aisles, and aisle areas. For each of these objects
         // we first need to remove existing objects in their respective tables
         // on that floor, then add the new ones according to the data sent by
         // the user.
+
+        // first, delete all things related to this fid -> use DELETE CASCADE
+        runQuery("DELETE FROM Wall WHERE floor = $fid");
+        runQuery("DELETE FROM Aisle WHERE floor = $fid");
+        runQuery("DELETE FROM AisleArea WHERE floor = $fid");
+        runQuery("DELETE FROM Landmark WHERE floor = $fid");
+
+        // second, insert all things from POST
+        $obj = json_decode($info);
+        $aislearea = $obj->AisleArea;
+        foreach($aislearea as $aa){
+            $aisle = $aa->Aisle;
+            $cx = $aa->center_x;
+            $cy = $aa->center_y;
+            $length = $aa->length;
+            $width = $aa->width;
+            $rotation = $aa->rotation;
+            // add aisle area to database
+            runQuery("INSERT INTO AisleArea (center_x, center_y, length, width, rotation, floor)
+                      VALUES ($cx, $cy, $length, $width, $rotation, $fid)");
+
+            // select the most recently added AisleArea
+            $aaid = getData("SELECT aaid FROM AisleArea ORDER BY aaid LIMIT 1");
+            foreach($aisle as $a){
+                // add aisle  to database
+                $cx = $a->center_x;
+                $cy = $a->center_y;
+                $length = $a->length;
+                $width = $a->width;
+                $rotation = $a->rotation;
+                $sides = $a->sides;
+                $category = $a->category;
+                $callrange = $a->call_range;
+
+                // insert aisle to database
+                runQuery("INSERT INTO Aisle (center_x, center_y, length, width, rotation, sides, category, aislearea, floor)
+                          VALUES ($cx, $cy, $length, $width, $rotation, $sides, '$category', $aaid, $fid)");
+
+                // select the most recently added Aisle
+                $aid = getData("SELECT aid FROM Aisle ORDER BY aaid LIMIT 1");
+                foreach($callrange as $cr){
+                    $collection = $cr->collection;
+                    $callstart = $cr->callstart;
+                    $callend = $cr->callend;
+                    $side = $cr->side;
+                    $aisle = $cr->aisle;
+
+                    // insert call range to database
+                    runQuery("INSERT INTO Call_Range (collection, callstart, callend, side, aisle)
+                              VALUES ($collection, '$callstart', '$callend', $side, $aisle)");
+                }
+            }
+        }
+
+        $aisle = $obj->Aisle;
+        foreach($aisle as $a){
+          // add aisle  to database
+          $cx = $a->center_x;
+          $cy = $a->center_y;
+          $length = $a->length;
+          $width = $a->width;
+          $rotation = $a->rotation;
+          $sides = $a->sides;
+          $category = $a->category;
+          $callrange = $a->call_range;
+
+          // insert aisle to database
+          runQuery("INSERT INTO Aisle (center_x, center_y, length, width, rotation, sides, category, aislearea, floor)
+                    VALUES ($cx, $cy, $length, $width, $rotation, $sides, '$category', $aaid, $fid)");
+
+          // select the most recently added Aisle
+          $aid = getData("SELECT aid FROM Aisle ORDER BY aaid LIMIT 1")[0]->aid;
+          foreach($callrange as $cr){
+              $collection = $cr->collection;
+              $callstart = $cr->callstart;
+              $callend = $cr->callend;
+              $side = $cr->side;
+              $aisle = $cr->aisle;
+
+              // insert call range to database
+              runQuery("INSERT INTO Call_Range (collection, callstart, callend, side, aisle)
+                        VALUES ('$collection', '$callstart', '$callend', $side, $aisle)");
+          }
+      }
+
+        $wall = $obj->Wall;
+        foreach($wall as $w){
+            $x1 = $w->x1;
+            $y1 = $w->y1;
+            $x2 = $w->x2;
+            $y2 = $w->y2;
+
+            // insert call range to database
+            runQuery("INSERT INTO Wall (x1, y1, x2, y2, floor)
+                      VALUES ($x1, $y1, $x2, $y2, $fid)");
+        }
+
+        $landmark = $obj->Landmark;
+        foreach($landmark as $lm){
+          $lname = $lm->lname;
+          $center_x = $lm->center_x;
+          $center_y = $lm->center_y;
+          $rotation = $lm->rotation;
+          $length = $lm->length;
+          $width = $lm->width;
+
+          // insert call range to database
+          runQuery("INSERT INTO Landmark (lname, center_x, center_y, rotation, length, width, floor)
+                    VALUES ('$lname', $center_x, $center_y, $rotation, $length, $width, $fid)");
+
+         }
     }
 
 
@@ -249,12 +379,25 @@
         $token = $_POST['token'];
 
         // TODO: Checks whether it is valid.
-        $time = mysql_query("SELECT expiration FROM Token WHERE token = $token");
-
+        $sql = "SELECT expiration FROM Token WHERE token = $token";
+        //$time_result = getData($sql);
+        //$time = $time_result[0]->expiration;
+        //$curr_time = time();
+        //$diff = $curr_time - $time;
+        //echo "time";
+        //echo $time;
+        //echo "current time";
+        //echo $curr_time;
+        //echo "diff";
+        //echo $diff;
+        //echo $time;
         // 20 secons for each token
-        if ($time < time() + 20) {
+
+        /*
+        if ($diff < 2000) {
             error("Invalid token. Please login again.");
         }
+        */
     }
 
 
@@ -273,6 +416,7 @@
      */
     function connect() {
         // Create connection
+        global $DB_HOST, $DB_PORT, $DB_USER, $DB_PASSWORD, $DB_NAME;
         $con = new mysqli($DB_HOST, $DB_USER, $DB_PASSWORD, $DB_NAME, $DB_PORT);
 
         // Check connection
@@ -324,213 +468,4 @@
         mysqli_close($con);
     }
 
-
-
-
-
-
-
-
-
-
-
-
-
-    /**
-     Below are several example fetch and set usages from a personal project.
-     These should serve as guides to how to write functions to do what we want
-     to do in Stack Maps.
-     */
-
-    /**
-     This echoes hiscores from the given list of Facebook Ids.
-     */
-    function getFriendHiscore() {
-        $ids = $_POST['ids'];
-        $isSD = $_POST['isSD'];
-        $order = "score";
-
-        if ($isSD > 0) {
-            $order = "sd";
-        }
-
-        $sql = "SELECT * FROM hiscore
-        WHERE score > 0 AND facebookId IN ($ids)
-        ORDER BY $order DESC, star, date";
-
-        echo json_encode(getData($sql));
-    }
-
-    /**
-     This echoes the length number of hiscores from the given index.
-     */
-    function getHiscore() {
-        $index = $_GET['index'];
-        $length = $_GET['length'];
-
-        $sql = "SELECT * FROM hiscore
-        WHERE score > 0
-        ORDER BY score DESC, star, date
-        LIMIT $index, $length";
-
-        echo json_encode(getData($sql));
-    }
-
-    /**
-     This echoes the length number of hiscores from the given index.
-     */
-    function getSDHiscore() {
-        $index = $_GET['index'];
-        $length = $_GET['length'];
-
-        $sql = "SELECT * FROM hiscore
-        WHERE sd > 0
-        ORDER BY sd DESC, star, date
-        LIMIT $index, $length";
-
-        echo json_encode(getData($sql));
-    }
-
-    /**
-     This echoes the rank and percentile of the given player.
-     */
-    function findHiscore() {
-        $id = $_GET['id'];
-
-        $sql1 = "SELECT COUNT(*) + 1 as rank FROM hiscore, (SELECT score, date, star FROM hiscore WHERE id = $id) AS I
-        WHERE hiscore.score > I.score OR (hiscore.score = I.score AND hiscore.star < I.star)
-        OR (hiscore.score = I.score AND hiscore.star = I.star AND hiscore.date < I.date)";
-
-        $sql1_result = getData($sql1);
-
-        $sql2 = "SELECT COUNT(*) as total FROM hiscore WHERE hiscore.score > 0";
-
-        $sql2_result = getData($sql2);
-
-        if (count($sql1_result) != 1) {
-            error("Invalid id.");
-        }
-
-        $result = $sql1_result[0];
-        $result->total = $sql2_result[0]->total;
-
-        echo json_encode($result);
-    }
-
-    /**
-     This echoes the rank and percentile of the given player.
-     */
-    function findSDHiscore() {
-        $id = $_GET['id'];
-
-
-        $sql1 = "SELECT COUNT(*) + 1 as rank FROM hiscore, (SELECT sd, date FROM hiscore WHERE id = $id) AS I
-        WHERE hiscore.sd > I.sd OR (hiscore.sd = I.sd AND hiscore.date < I.date)";
-
-        $sql1_result = getData($sql1);
-
-        $sql2 = "SELECT COUNT(*) as total FROM hiscore WHERE hiscore.sd > 0";
-
-        $sql2_result = getData($sql2);
-
-        if (count($sql1_result) != 1) {
-            error("Invalid id.");
-        }
-
-        $result = $sql1_result[0];
-        $result->total = $sql2_result[0]->total;
-
-        echo json_encode($result);
-    }
-
-
-    /**
-     This echoes the star rank.
-     */
-    function findHistar() {
-        $id = $_GET['id'];
-
-
-        $sql = "SELECT COUNT(*) + 1 as rank FROM hiscore, (SELECT star, date FROM hiscore WHERE id = $id) AS I
-        WHERE hiscore.star > I.star OR (hiscore.star = I.star AND hiscore.date < I.date)";
-
-        $sql_result = getData($sql);
-
-        if (count($sql_result) != 1) {
-            error("Invalid id.");
-        }
-
-        echo json_encode($sql_result[0]);
-    }
-
-
-    function postHiscore() {
-        $id = $_POST['id'];
-        $name = urldecode($_POST['name']);
-        $hiscore = $_POST['hiscore'];
-        $sd = $_POST['sd'];
-        $star = $_POST['star'];
-        $fbid = '';
-        $uuid = '';
-
-        if (array_key_exists('fbid', $_POST)) {
-            $fbid = $_POST['fbid'];
-        }
-
-        if (array_key_exists('uuid', $_POST)) {
-            $uuid = $_POST['uuid'];
-        }
-
-        // Update username and
-        $sql = "UPDATE hiscore
-        SET name = '$name',
-        score = $hiscore,
-        sd = $sd,
-        star = $star,
-        facebookId = '$fbid',
-        uuid = '$uuid',
-        date = CURRENT_TIMESTAMP
-        WHERE id = $id";
-        runQuery($sql);
-
-        $response['completion'] = "Updated.";
-        echo json_encode($response);
-    }
-
-    /**
-     This generates a new UID and send it back to the user.
-     */
-    function getUID() {
-        $hash = $_GET['hash'];
-
-        if (array_key_exists('uuid', $_GET)) {
-            $uuid = $_GET['uuid'];
-
-            // Try to find an entry.
-            $sql = "SELECT id FROM hiscore WHERE uuid = '$uuid'";
-            $res = getData($sql);
-
-            if (count($res) == 1) {
-                echo json_encode($res);
-
-                return;
-            } else {
-                $sql = "INSERT INTO hiscore
-                (id, name, score, star, uuid) VALUES
-                (NULL, '', 0, 0, '$uuid')";
-                runQuery($sql);
-            }
-        } else {
-            $sql = "INSERT INTO hiscore
-            (id, name, score, star) VALUES
-            (NULL, '', 0, 0)";
-            runQuery($sql);
-        }
-
-        $sql = 'SELECT id
-        FROM hiscore
-        ORDER BY id DESC
-        LIMIT 1';
-        echo json_encode(getData($sql));
-    }
 ?>
