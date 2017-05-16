@@ -59,7 +59,7 @@
         $username = $_POST['username'];
         $password = $_POST['password'];
 
-        echo "login";
+        //echo "login";
 
         // Performs custom validation. By default we have a username and
         // password in the database.
@@ -90,8 +90,8 @@
         */
 
         $expiration = time();
-        echo $expiration;
-        echo "expiration";
+        //echo $expiration;
+        //echo "expiration";
         $sql = "INSERT INTO Token (token, expiration) VALUES ('$token', now())";
         runQuery($sql);
 
