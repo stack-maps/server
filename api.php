@@ -114,7 +114,7 @@
      */
     function getLibraryList() {
         // This will look somewhat similar to the code below.
-        $sql = "SELECT lid FROM Library";
+        $sql = "SELECT * FROM Library";
         echo json_encode(getData($sql));
     }
 
