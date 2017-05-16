@@ -118,6 +118,25 @@
         echo json_encode(getData($sql));
     }
 
+    function changeFloorName() {
+        $floorId = $_POST['fid'];
+        $fName = $_POST['fname'];
+        $sql = "UPDATE Floor SET fname = '$fName' WHERE lid = $floorId";
+        echo json_encode(getData($sql));
+    }
+
+    function deleteFloor() {
+        $floorId = $_POST['fid'];
+        $sql = "DELETE from Floor WHERE fid = floorId";
+        echo json_encode(getData($sql));
+    }
+
+    function deleteLibrary() {
+         $libId = $_POST['lid'];
+         $sql = "DELETE from Library WHERE lid = libId";
+         echo json_encode(getData($sql));
+    }
+
 
     /**
      This fetches the current list of floors of a particular library from the
