@@ -383,11 +383,14 @@
         $token = $_POST['token'];
 
         // TODO: Checks whether it is valid.
-        $sql = "SELECT expiration FROM Token WHERE token = $token";
-        //$time_result = getData($sql);
-        //$time = $time_result[0]->expiration;
-        //$curr_time = time();
-        //$diff = $curr_time - $time;
+        $sql = "SELECT expiration FROM Token WHERE token = '$token'";
+        $time_result = getData($sql);
+        if(count($time_result)!=1){
+            error("no token found");
+        }
+        $time = $time_result[0]->expiration;
+        $curr_time = time();
+        $diff = $curr_time - $time;
         //echo "time";
         //echo $time;
         //echo "current time";
@@ -395,13 +398,12 @@
         //echo "diff";
         //echo $diff;
         //echo $time;
+        
         // 20 secons for each token
-
-        /*
         if ($diff < 2000) {
             error("Invalid token. Please login again.");
         }
-        */
+        
     }
 
 
