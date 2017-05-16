@@ -73,10 +73,14 @@
         // generating until we get no collisions.
         $exists = FALSE; // TODO: replace with actual db check.
 
-        $sql = "SELECT * FROM Users WHERE username = $username AND password = $password";
+        $sql = "SELECT * FROM Users WHERE username = '$username' AND password = '$password'";
         $query = getData($sql);
+        
+        if(count($query)!=1){
+            error("not found matching username and password");
+        }
 
-        echo "query";
+        
         /*
         while (mysql_num_rows($query) != 0) {
             $token = bin2hex(openssl_random_pseudo_bytes(32));
