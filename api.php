@@ -1,5 +1,3 @@
-
-
 <?php
     /*
      These information are used to connect to the database that manages the
@@ -42,6 +40,8 @@
         updateLibrary();
     } else if ($_POST['request'] === 'updateFloor') {
         updateFloor();
+    } else if ($_POST['request'] === 'getLibrary') {
+        getLibrary();
     } else {
         echo "beginning";
         error("Invalid request.");
@@ -204,29 +204,49 @@
         echo json_encode($response);
     }
 
-    function getLibrary(){
+    function getLibrary() {
         $lid = $_POST['lid'];
-        $sql = "SELECT fid FROM Floor WHERE library = $lid";
-        $fids = getData($sql)->fid;
-        $array = array();
-        foreach($fids as $fid){
-            $sql = "SELECT * FROM Floor WHERE fid = $fid";
-            //echo json_encode(getData($sql)[0]);
-            $response['floor'] = getData($sql)[0];
-            $sql = "SELECT * FROM Aisle WHERE floor = $fid";
-            //echo json_encode(getData($sql));
-            $response['aisle'] = getData($sql);
-            $sql = "SELECT * FROM Wall WHERE floor = $fid";
-            //echo json_encode(getData($sql));
-            $response['wall'] = getData($sql);
-            $sql = "SELECT * FROM Landmark WHERE floor = $fid";
-            //echo json_encode(getData($sql));
-            $response['landmark'] = getData($sql);
-            array_push($array, $response);
+
+        $sql = "SELECT * FROM Library WHERE lid = $lid";
+        $sql_result = getData($sql);
+
+        if (count($sql_result) != 1) {
+          error("No such library!");
         }
 
-        echo json_encode($array);
+        $library = $sql_result[0];
 
+        $sql = "SELECT fid FROM Floor WHERE library = $lid";
+        $fids = getData($sql);
+        $floors = array();
+
+        foreach ($fids as $fid_entry) {
+          $fid = $fid_entry->fid;
+          
+          $sql = "SELECT * FROM Floor WHERE fid = $fid";
+          $floor = getData($sql)[0];
+          
+          $sql = "SELECT * FROM Aisle WHERE floor = $fid";
+          $floor->Aisle = getData($sql);
+          
+          $sql = "SELECT * FROM AisleArea WHERE floor = $fid";
+          $floor->AisleArea = getData($sql);
+          
+          $sql = "SELECT * FROM Wall WHERE floor = $fid";
+          $floor->Wall = getData($sql);
+          
+          $sql = "SELECT * FROM Landmark WHERE floor = $fid";
+          $floor->Landmark = getData($sql);
+          
+          array_push($floors, $floor);
+        }
+
+        $library->floors = $floors;
+
+        $response['success'] = TRUE;
+        $response['library'] = $library;
+
+        echo json_encode($response);
     }
 
 
@@ -267,22 +287,18 @@
         checkToken();
 
         $floorName = $_POST['floorname'];
-        $libName = $_POST['libname'];
+        $lid = $_POST['lid'];
         $forder = $_POST['forder'];
-        $sql = "SELECT lid FROM Library WHERE lname = '$libName'";
+        $sql = "SELECT lid FROM Library WHERE lid = $lid";
 
-        $res = getData($sql);
-
-        if(count($res) != 1){
+        if(count(getData($sql)) != 1){
           error("The library is not found");
         }
-
-        $lid = $res[0]->lid;
 
         // TODO: create a new floor in the library and echo the id.
         $sql = "INSERT INTO Floor (fname, forder, library) VALUES ('$floorName', '$forder', '$lid')";
         runQuery($sql);
-        $sql = "SELECT fid FROM Floor WHERE name = '$floorName' AND library = '$libname' ";
+        $sql = "SELECT fid FROM Floor WHERE fname = '$floorName' AND library = $lid ";
 
         $sql_result = getData($sql);
         $ans = $sql_result[0];
@@ -318,7 +334,7 @@
     function updateFloor() {
         checkToken();
 
-        $floorId = $_POST['fid'];
+        $fid = $_POST['fid'];
         $info = $_POST['floor_stuff'];
 
         // TODO: this is probably the longest function in the file. A floor
@@ -357,15 +373,14 @@
                 $width = $a->width;
                 $rotation = $a->rotation;
                 $sides = $a->sides;
-                $category = $a->category;
                 $callrange = $a->call_range;
 
                 // insert aisle to database
-                runQuery("INSERT INTO Aisle (center_x, center_y, length, width, rotation, sides, category, aislearea, floor)
-                          VALUES ($cx, $cy, $length, $width, $rotation, $sides, '$category', $aaid, $fid)");
+                runQuery("INSERT INTO Aisle (center_x, center_y, length, width, rotation, sides, aislearea, floor)
+                          VALUES ($cx, $cy, $length, $width, $rotation, $sides, $aaid, $fid)");
 
                 // select the most recently added Aisle
-                $aid = getData("SELECT aid FROM Aisle ORDER BY aaid LIMIT 1");
+                $aid = getData("SELECT aid FROM Aisle ORDER BY $aaid LIMIT 1");
                 foreach($callrange as $cr){
                     $collection = $cr->collection;
                     $callstart = $cr->callstart;
@@ -389,25 +404,23 @@
           $width = $a->width;
           $rotation = $a->rotation;
           $sides = $a->sides;
-          $category = $a->category;
           $callrange = $a->call_range;
 
           // insert aisle to database
-          runQuery("INSERT INTO Aisle (center_x, center_y, length, width, rotation, sides, category, aislearea, floor)
-                    VALUES ($cx, $cy, $length, $width, $rotation, $sides, '$category', $aaid, $fid)");
+          runQuery("INSERT INTO Aisle (center_x, center_y, length, width, rotation, sides, aislearea, floor)
+                    VALUES ($cx, $cy, $length, $width, $rotation, $sides, NULL, $fid)");
 
           // select the most recently added Aisle
-          $aid = getData("SELECT aid FROM Aisle ORDER BY aaid LIMIT 1")[0]->aid;
+          $aid = getData("SELECT aid FROM Aisle ORDER BY aid DESC LIMIT 1")[0]->aid;
           foreach($callrange as $cr){
               $collection = $cr->collection;
               $callstart = $cr->callstart;
               $callend = $cr->callend;
               $side = $cr->side;
-              $aisle = $cr->aisle;
 
               // insert call range to database
               runQuery("INSERT INTO Call_Range (collection, callstart, callend, side, aisle)
-                        VALUES ('$collection', '$callstart', '$callend', $side, $aisle)");
+                        VALUES ('$collection', '$callstart', '$callend', $side, $aid)");
           }
       }
 
@@ -437,6 +450,9 @@
                     VALUES ('$lname', $center_x, $center_y, $rotation, $length, $width, $fid)");
 
          }
+
+         $response["success"] = TRUE;
+         echo json_encode($response);
     }
 
 

@@ -69,7 +69,6 @@
      width FLOAT(9),
      rotation FLOAT(9),
      sides INT(1),
-     category CHAR(10),
      aislearea INT,
      floor INT,
 
@@ -118,7 +117,7 @@ create table Call_Range(
  /* Create token table*/
  create table Token(
      tid INT(9) NOT NULL PRIMARY KEY AUTO_INCREMENT,
-     token CHAR(32),
+     token CHAR(64),
      expiration DATETIME
  );
 
