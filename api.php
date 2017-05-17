@@ -269,17 +269,27 @@
         $floorName = $_POST['floorname'];
         $libName = $_POST['libname'];
         $forder = $_POST['forder'];
-        echo "createfloor";
         $sql = "SELECT lid FROM Library WHERE lname = '$libName'";
-        $lid = getData($sql)[0]->lid;
-        echo "lid";
-        echo $lid;
+
+        $res = getData($sql);
+
+        if(count($res) != 1){
+          error("The library is not found");
+        }
+
+        $lid = $res[0]->lid;
 
         // TODO: create a new floor in the library and echo the id.
         $sql = "INSERT INTO Floor (fname, forder, library) VALUES ('$floorName', '$forder', '$lid')";
         runQuery($sql);
-        $id = "SELECT fid FROM Floor WHERE name = '$floorName' AND library = '$libname' ";
-        echo json_encode(getData($id));
+        $sql = "SELECT fid FROM Floor WHERE name = '$floorName' AND library = '$libname' ";
+
+        $sql_result = getData($sql);
+        $ans = $sql_result[0];
+
+        $result['id'] = $ans->fid;
+        $result['success'] = TRUE;
+        echo json_encode($result);
     }
 
 
