@@ -22,6 +22,14 @@
         login();
     } else if ($_POST['request'] === 'getLibraryList') {
         getLibraryList();
+    } else if ($_POST['request'] === 'changeFloorName') {
+        changeFloorName();
+    } else if ($_POST['request'] === 'deleteFloor') {
+        deleteFloor();
+    } else if ($_POST['request'] === 'deleteLibrary') {
+        deleteLibrary();
+    } else if ($_POST['request'] === 'getLibraryList') {
+        getLibraryList();
     } else if ($_POST['request'] === 'getFloorList') {
         getFloorList();
     } else if ($_POST['request'] === 'getBookLocation') {
@@ -70,12 +78,12 @@
 
         $sql = "SELECT * FROM Users WHERE username = '$username' AND password = '$password'";
         $query = getData($sql);
-        
+
         if(count($query)!=1){
             error("not found matching username and password");
         }
 
-        
+
         /*
         while (mysql_num_rows($query) != 0) {
             $token = bin2hex(openssl_random_pseudo_bytes(32));
@@ -204,7 +212,7 @@
         foreach($fids as $fid){
             $sql = "SELECT * FROM Floor WHERE fid = $fid";
             //echo json_encode(getData($sql)[0]);
-            $response['floor'] = getData($sql)[0];   
+            $response['floor'] = getData($sql)[0];
             $sql = "SELECT * FROM Aisle WHERE floor = $fid";
             //echo json_encode(getData($sql));
             $response['aisle'] = getData($sql);
@@ -216,7 +224,7 @@
             $response['landmark'] = getData($sql);
             array_push($array, $response);
         }
-        
+
         echo json_encode($array);
 
     }
@@ -451,12 +459,12 @@
         //echo "diff";
         //echo $diff;
         //echo $time;
-        
+
         // 20 secons for each token
         if ($diff < 2000) {
             error("Invalid token. Please login again.");
         }
-        
+
     }
 
 
