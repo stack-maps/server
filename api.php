@@ -1,9 +1,4 @@
-/**
- * Stack Maps
- *
- * Author: Jiacong Xu
- * Created on: Sep/23/2014
- */
+
 
 <?php
     /*
@@ -169,7 +164,7 @@
 
         // first find all call number ranges in this library
 
-        $sql = "SELECT cr.aisle FROM Call_Range cr WHERE
+        $sql = "SELECT * FROM Call_Range cr WHERE
                 (cr.callstart <= '$callNo' and cr.callend >= '$callNo') and
                 cr.aisle IN
                 (SELECT a.aid FROM Aisle a WHERE a.floor IN
@@ -180,10 +175,49 @@
         if(count($result) != 1){
           error("The book is not found");
         }
+        //echo json_encode($result[0]);
+        $response['call_range'] = $result[0];
         $aid = $result[0]->aisle;
-        $sql = "SELECT floor FROM Aisle WHERE aid = $aid";
+        $sql = "SELECT * FROM Aisle WHERE aid = $aid";
         $fid = getData($sql)[0]->floor;
-        echo $fid;
+        $sql = "SELECT * FROM Floor WHERE fid = $fid";
+        //echo json_encode(getData($sql)[0]);
+        $response['floor'] = getData($sql)[0];
+        $response['aid'] = $aid;
+        $sql = "SELECT * FROM Aisle WHERE floor = $fid";
+        //echo json_encode(getData($sql));
+        $response['aisle'] = getData($sql);
+        $sql = "SELECT * FROM Wall WHERE floor = $fid";
+        //echo json_encode(getData($sql));
+        $response['wall'] = getData($sql);
+        $sql = "SELECT * FROM Landmark WHERE floor = $fid";
+        //echo json_encode(getData($sql));
+        $response['landmark'] = getData($sql);
+        echo json_encode($response);
+    }
+
+    function getLibrary(){
+        $lid = $_POST['lid'];
+        $sql = "SELECT fid FROM Floor WHERE library = $lid";
+        $fids = getData($sql)->fid;
+        $array = array();
+        foreach($fids as $fid){
+            $sql = "SELECT * FROM Floor WHERE fid = $fid";
+            //echo json_encode(getData($sql)[0]);
+            $response['floor'] = getData($sql)[0];   
+            $sql = "SELECT * FROM Aisle WHERE floor = $fid";
+            //echo json_encode(getData($sql));
+            $response['aisle'] = getData($sql);
+            $sql = "SELECT * FROM Wall WHERE floor = $fid";
+            //echo json_encode(getData($sql));
+            $response['wall'] = getData($sql);
+            $sql = "SELECT * FROM Landmark WHERE floor = $fid";
+            //echo json_encode(getData($sql));
+            $response['landmark'] = getData($sql);
+            array_push($array, $response);
+        }
+        
+        echo json_encode($array);
 
     }
 
