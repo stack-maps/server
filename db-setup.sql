@@ -24,7 +24,7 @@
 CREATE TABLE library (
     PRIMARY KEY (library_id),
     library_id      INT         NOT NULL    AUTO_INCREMENT,
-    library_name    CHAR(25)
+    library_name    CHAR(25)    UNIQUE
 );
 
 CREATE TABLE floor (
