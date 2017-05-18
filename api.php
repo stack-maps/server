@@ -16,35 +16,16 @@
     }
 
     // Switching to a particular request.
-    if ($_POST['request'] === 'login') {
-        login();
-    } else if ($_POST['request'] === 'getLibraryList') {
-        getLibraryList();
-    } else if ($_POST['request'] === 'changeFloorName') {
-        changeFloorName();
-    } else if ($_POST['request'] === 'deleteFloor') {
-        deleteFloor();
-    } else if ($_POST['request'] === 'deleteLibrary') {
-        deleteLibrary();
-    } else if ($_POST['request'] === 'getLibraryList') {
-        getLibraryList();
-    } else if ($_POST['request'] === 'getFloorList') {
-        getFloorList();
-    } else if ($_POST['request'] === 'getBookLocation') {
-        getBookLocation();
-    } else if ($_POST['request'] === 'createLibrary') {
-        createLibrary();
-    } else if ($_POST['request'] === 'createFloor') {
-        createFloor();
-    } else if ($_POST['request'] === 'updateLibrary') {
-        updateLibrary();
-    } else if ($_POST['request'] === 'updateFloor') {
-        updateFloor();
-    } else if ($_POST['request'] === 'getLibrary') {
-        getLibrary();
+    $endpoints = array('login', 'getLibraryList', 'changeFloorName',
+      'deleteFloor', 'deleteLibrary', 'getLibraryList', 'getFloorList',
+      'getBookLocation', 'createLibrary', 'createFloor', 'updateLibrary',
+      'updateFloor', 'getLibrary');
+    $endpoint = $_POST['request'];
+    if (function_exists($endpoint) && in_array($endpoint, $endpoints, true)) {
+      $endpoint();
     } else {
-        echo "beginning";
-        error("Invalid request.");
+      echo "beginning";
+      error("Invalid request.");
     }
 
 
@@ -222,22 +203,22 @@
 
         foreach ($fids as $fid_entry) {
           $fid = $fid_entry->fid;
-          
+
           $sql = "SELECT * FROM Floor WHERE fid = $fid";
           $floor = getData($sql)[0];
-          
+
           $sql = "SELECT * FROM Aisle WHERE floor = $fid";
           $floor->Aisle = getData($sql);
-          
+
           $sql = "SELECT * FROM AisleArea WHERE floor = $fid";
           $floor->AisleArea = getData($sql);
-          
+
           $sql = "SELECT * FROM Wall WHERE floor = $fid";
           $floor->Wall = getData($sql);
-          
+
           $sql = "SELECT * FROM Landmark WHERE floor = $fid";
           $floor->Landmark = getData($sql);
-          
+
           array_push($floors, $floor);
         }
 
