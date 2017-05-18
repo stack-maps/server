@@ -56,17 +56,18 @@
      'username':    Username entered by the client.
      'password':    Password entered by the client.
 
-     Respose format:
+     Response format:
      'success':     Whether login was successful.
      'error':       The error message, if not successful.
      'token':       The token for this login, if successful. This is sed as 
                     quick credential checks for subsequent db modifications. 
      */
     function login() {
+        // Parse parameters.
         $username = $_POST['username'];
         $password = $_POST['password'];
 
-        // Open db connection
+        // Open db connection.
         $con = connect();
 
         // Performs validation here. By default we have a username and password
@@ -94,10 +95,10 @@
         $sql = 'INSERT INTO token (token_body, expire_date) VALUES (?, ?)';
         run_query($con, $sql, 'si', $token, $expire_date);
 
-        // Closes db connection.
+        // Close db connection.
         $con->close();
 
-        // Return this token along with status to the user.
+        // Send response.
         $response['success'] = $success;
         $response['token'] = $token;
 
@@ -114,21 +115,22 @@
      'library_name':    Name of the new library. This must be different from
                         existing names in the database.
 
-     Respose format:
+     Response format:
      'success':         Whether creation was successful.
      'error':           The error message, if not successful.
      'id':              The library_id of the newly created Library record in
                         the database.
      */
     function create_library() {
+        $con = connect();
+
         // Check user credentials.
-        check_token($_POST['token']);
+        check_token($con, $_POST['token']);
         
         // Parse parameters.
         $name = $_POST['name'];
 
-        // Check if the name is already taken
-        $con = connect();
+        // Check if the name is already taken.
         $sql = 'SELECT library_id FROM library WHERE library_name = ?';
 
         if (count(get_data($con, $sql, 's', $name)) > 0) {
@@ -166,15 +168,17 @@
                     on how this works.
      'library_id':  Id of the library in which the floor will be created in.
 
-     Respose format:
+     Response format:
      'success':     Whether creation was successful.
      'error':       The error message, if not successful.
      'id':          The floor_id of the newly created Floor record in the
                     database.
      */
     function create_floor() {
+        $con = connect();
+
         // Check user credentials.
-        check_token($_POST['token']);
+        check_token($con, $_POST['token']);
 
         // Parse parameters.
         $floor_name = $_POST['floor_name'];
@@ -182,7 +186,6 @@
         $library_id = $_POST['library_id'];
 
         // Verify the library is valid.
-        $con = connect();
         $sql = 'SELECT library_id FROM library WHERE library_id = ?';
 
         if (count(get_data($con, $sql, 'i', $library_id)) != 1) {
@@ -217,7 +220,7 @@
      POST parameters:
      None
 
-     Respose format:
+     Response format:
      'success':     Whether retrieval was successful.
      'error':       The error message, if not successful.
      'data':        An array of Libraries without floors property. Refer to the
@@ -247,14 +250,14 @@
      POST parameters:
      'library_id':  Id of the library to fetch information on.
 
-     Respose format:
+     Response format:
      'success':     Whether retrieval was successful.
      'error':       The error message, if not successful.
      'data':        A Library object. Refer to the JSON data format for more
                     information.
      */
     function get_library() {
-        // Parse parameters
+        // Parse parameter.
         $library_id = $_POST['library_id'];
 
         // Verify the library is valid.
@@ -293,8 +296,9 @@
      the exact aisle containing the book. It also provides the floor plan data
      for that floor so a map can be drawn from it.
 
-     If multiple floors appear to contain the same book's call number, the
-     lowest floor will be retrieved.
+     If multiple floors appear to contain the same book's call number, multiple
+     floors will be returned. It is up to the caller to decide on what to do
+     with the data.
 
      The book's call number is stored as a string in the database, and it is in
      this function that we interpret that string and compare it with the given
@@ -308,22 +312,25 @@
                         the format of this number in the current implementation,
                         refer to documentation on call number.
 
-     Respose format:
+     Response format:
      'success':         Whether retrieval was successful.
      'error':           The error message, if not successful.
-     'data':            A Floor object. Refer to the JSON data format for more
-                        information.
-     'aisle_id':        Id of the aisle containing the given call number.
-     'side':            If the aisle is double sided, this identifies which side
-                        the book is on. 0 indicates the book is on the left, 1 
-                        indicates the book is on the right. Left and right are 
-                        relative to the local space of the stack (where we 
-                        disregard its rotation). At 0 rotation, a double sided 
-                        aisle should have short width and long height, with two 
-                        rectangles: one on the left and the other on the right.
+     'floors':          A numeric array of Floor object. Refer to the JSON data 
+                        format for more information.
+     'aisles':          A numeric array of associative arrays each containing
+                        two elements, an 'aisle_id' and a 'side'. The former is
+                        the id of the aisle containing the given call number.
+                        The latter is present only if the aisle is double sided,
+                        in which case 'side' identifies which side the book is 
+                        on. 0 indicates the book is on the left, 1 indicates the 
+                        book is on the right. Left and right are relative to the 
+                        local space of the stack (where we disregard its 
+                        rotation). At 0 rotation, a double sided aisle should 
+                        have short width and long height, with two rectangles: 
+                        one on the left and the other on the right.
      */
     function get_book_location() {
-        // Parse parameters
+        // Parse parameters.
         $call_number = $_POST['call_number'];
         $library_name = $_POST['library_name'];
 
@@ -339,8 +346,9 @@
         $library = $result[0];
 
         // Fetch all call number ranges in this library.
-        $sql = 'SELECT * 
-                  FROM call_range 
+        $sql = 'SELECT *
+                  FROM call_range
+                  JOIN aisle ON call_range.aisle = aisle.aisle_id
                  WHERE aisle IN 
                        (SELECT aisle_id 
                           FROM aisle 
@@ -352,8 +360,29 @@
                        )';
         $call_ranges = get_data($con, $sql, 'i', $library['library_id']);
 
-        // Parse each call number range to see if the given one falls within it.
+        $aisles = array();
+        $floor_ids = array();
 
+        // Parse each call number range to see if the given one falls within it.
+        foreach ($call_ranges as $call_range) {
+            $range_start = $call_range['call_start'];
+            $range_end = $call_range['call_end'];
+
+            if (compare_call_numbers($range_start, $call_number) <= 0 &&
+                compare_call_numbers($call_number, $range_end) < 0) {
+                // Call number is within this range.
+                $aisle_element['aisle_id'] = $call_range['aisle'];
+
+                if ($call_range['side'] !== NULL) {
+                    $aisle_element['side'] = $call_range['side'];
+                }
+
+                array_push($aisles, $aisle_element);
+
+            }
+        }
+
+        // TODO
 
         if(count($result) != 1){
           error("The book is not found");
@@ -380,50 +409,65 @@
     }
 
 
-    function changeFloorName() {
-        $floorId = $_POST['fid'];
-        $fName = $_POST['fname'];
-        $sql = "UPDATE Floor SET fname = '$fName' WHERE lid = $floorId";
-        echo json_encode(getData($sql));
-    }
+    /**
+     This updates a library's name. Note each library must have a unique name.
 
-    function deleteFloor() {
-        $floorId = $_POST['fid'];
-        $sql = "DELETE from Floor WHERE fid = floorId";
-        echo json_encode(getData($sql));
-    }
+     POST parameters:
+     'token':           Access token given from login.
+     'library_id':      Id of the library to perform the change to.
+     'library_name':    New name of the library.
 
-    function deleteLibrary() {
-         $libId = $_POST['lid'];
-         $sql = "DELETE from Library WHERE lid = libId";
-         echo json_encode(getData($sql));
-    }
+     Response format:
+     'success':         Whether retrieval was successful.
+     'error':           The error message, if not successful.
+     */
+    function update_library() {
+        $con = connect();
 
+        // Check user credentials.
+        check_token($con, $_POST['token']);
+
+        // Parse parameters.
+        $new_name = $_POST['library_name'];
+        $library_id = $_POST['library_id'];
+
+        // Verify the change is valid.
+        $sql = 'SELECT * FROM library WHERE library_id = ? OR library_name = ?';
+        $result = get_data($con, $sql, 'is', $library_id, $new_name);
+
+        if (count($result) != 1) {
+            error('update_library: Given library is not found or name is taken.');
+        }
+
+        // Update library name.
+        $sql = 'UPDATE library SET library_name = ? WHERE library_id = ?';
+        $run_query($con, $sql, 'si', $new_name, $library_id);
+
+        // Close database.
+        $con->close();
+
+        // Send response.
+        $response['success'] = TRUE;
+
+        echo json_encode($response);
+    }
 
 
     /**
-     This updates a library in the database and returns a success flag.
+     This updates a floor of a library. The floor includes aisles, call number
+     ranges in aisles, aisle areas, aisles in aisle areas, call number ranges in
+     aisles in aisle areas, landmarks, and walls.
 
-     This function requires a token.
+     POST parameters:
+     'token':   Access token given from login.
+     'floor':   Floor object encoded in JSON. Refer to the JSON data format 
+                for more information.
+
+     Response format:
+     'success': Whether update was successful.
+     'error':   The error message, if not successful.
      */
-    function updateLibrary() {
-        checkToken();
-
-        $libName = $_POST['libname'];
-        $libId = $_POST['lid'];
-
-        // TODO: updates the library with the given id with the new name.
-        $sql = "UPDATE Library SET lname = '$libName' WHERE lid = $libId";
-        echo json_encode(getData($sql));
-    }
-
-
-    /**
-     This updates a floor in the database and returns a success flag.
-
-     This function requires a token.
-     */
-    function updateFloor() {
+    function update_floor() {
         checkToken();
 
         $fid = $_POST['fid'];
@@ -547,6 +591,137 @@
          echo json_encode($response);
     }
 
+
+    /**
+     This updates a floor's name and floor order within a library.
+
+     POST parameters:
+     'token':       Access token given from login.
+     'floor_id':    Id of the floor to perform the change to.
+     'floor_name':  New name of the floor.
+     'floor_order': New order of the floor.
+
+     Response format:
+     'success':         Whether update was successful.
+     'error':           The error message, if not successful.
+     */
+    function update_floor_meta() {
+        $con = connect();
+
+        // Check user credentials.
+        check_token($con, $_POST['token']);
+
+        // Parse parameters.
+        $new_name = $_POST['floor_name'];
+        $new_order = $_POST['floor_order'];
+        $floor_id = $_POST['floor_id'];
+
+        // Verify the floor is valid.
+        $sql = 'SELECT * FROM floor WHERE floor_id = ?';
+        $result = get_data($con, $sql, 'i', $floor_id);
+
+        if (count($result) != 1) {
+            error('update_floor: Given floor is not found.');
+        }
+
+        // Update floor meta information.
+        $sql = 'UPDATE floor SET floor_name = ?, floor_order = ? WHERE floor_id = ?';
+        $run_query($con, $sql, 'si', $new_name, $new_order, $floor_id);
+
+        // Close database.
+        $con->close();
+
+        // Send response.
+        $response['success'] = TRUE;
+
+        echo json_encode($response);
+    }
+
+
+    /**
+     This deletes a library and all floors associated with it. Deletions are not 
+     recoverable.
+
+     POST parameters:
+     'token':       Access token given from login.
+     'library_id':  Id of the library to delete.
+
+     Response format:
+     'success':     Whether deletion was successful.
+     'error':       The error message, if not successful.
+     */
+    function delete_library() {
+        $con = connect();
+
+        // Check user credentials.
+        check_token($con, $_POST['token']);
+
+        // Parse parameters.
+        $library_id = $_POST['library_id'];
+
+        // Verify the floor is valid.
+        $sql = 'SELECT * FROM library WHERE library_id = ?';
+        $result = get_data($con, $sql, 'i', $library_id);
+
+        if (count($result) != 1) {
+            error('delete_library: Given library is not found.');
+        }
+
+        // Delete library.
+        $sql = 'DELETE FROM library WHERE library_id = ?';
+        $run_query($con, $sql, 'i', $library_id);
+
+        // Close database.
+        $con->close();
+
+        // Send response.
+        $response['success'] = TRUE;
+
+        echo json_encode($response);
+    }
+
+
+    /**
+     This deletes a floor and all objects inside it. Deletions are not 
+     recoverable.
+
+     POST parameters:
+     'token':       Access token given from login.
+     'floor_id':    Id of the floor to delete.
+
+     Response format:
+     'success':     Whether deletion was successful.
+     'error':       The error message, if not successful.
+     */
+    function delete_floor() {
+        $con = connect();
+
+        // Check user credentials.
+        check_token($con, $_POST['token']);
+
+        // Parse parameters.
+        $floor_id = $_POST['floor_id'];
+
+        // Verify the floor is valid.
+        $sql = 'SELECT * FROM floor WHERE floor_id = ?';
+        $result = get_data($con, $sql, 'i', $floor_id);
+
+        if (count($result) != 1) {
+            error('update_floor: Given floor is not found.');
+        }
+
+        // Delete floor.
+        $sql = 'DELETE FROM floor WHERE floor_id = ?';
+        $run_query($con, $sql, 'i', $floor_id);
+
+        // Close database.
+        $con->close();
+
+        // Send response.
+        $response['success'] = TRUE;
+
+        echo json_encode($response);
+    }
 
 
     //////////////////////
