@@ -43,7 +43,6 @@
     } else if ($_POST['request'] === 'getLibrary') {
         getLibrary();
     } else {
-        echo "beginning";
         error("Invalid request.");
     }
 
@@ -62,10 +61,8 @@
         $username = $_POST['username'];
         $password = $_POST['password'];
 
-        //echo "login";
-
-        // Performs custom validation. By default we have a username and
-        // password in the database.
+        // Performs validation here. By default we have a username and password
+        // in the database. Replace with third party authentication if required.
 
         $success = TRUE; // As placeholder we just accept all access.
 
