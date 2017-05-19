@@ -140,7 +140,7 @@ function display_map(libname, callno){
     };
     xhttp.open("POST", "api.php", true);
     xhttp.setRequestHeader("Content-type", "application/x-www-form-urlencoded");
-    xhttp.send("request=getBookLocation&callno=" + callno + "&libname=" + libname);
+    xhttp.send("request=get_book_location&call_number=" + callno + "&library_name=" + libname);
 }
 
 /*
@@ -202,6 +202,8 @@ function draw_map(libname, callno, return_result) {
 
         var display_window = background.append("div")
             .style("position", "absolute")
+            .style("width", "80%")
+            .style("height", "80%")
             .style("margin", display_window_margin + "px")
             .style("background-color", "white")
             .style("font-family", "'Open Sans', sans-serif")
@@ -216,31 +218,34 @@ function draw_map(libname, callno, return_result) {
         var library_name_div = title_bar_div.append("div")
             .style("padding", "10px")
             .style("font-size", "38px")
-            .text("Floor " + return_result["floor"]["fname"] + " " + libname + " Library");
+            .text("Floor " + adjusted_result["floors"][0]["floor_name"] + " " + libname + " Library");
 
         var call_num_div = title_bar_div.append("div")
             .style("padding", "10px")
             .style("font-size", "23px")
             .text("Call Number: " + callno);
 
-        var input_dimension = calc_svg_dimension(adjusted_result["wall"]);
+        var input_dimension = calc_svg_dimension(adjusted_result["floors"][0]);
         var raw_width = input_dimension["x_max"] - input_dimension["x_min"];
         var raw_height = input_dimension["y_max"] - input_dimension["y_min"];
-        var adjusted_width = Math.ceil(raw_width / 100) * 100 + 20;
-        var adjusted_height = Math.ceil(raw_height / 100) * 100 + 20;
+        var adjusted_width = Math.ceil(raw_width / 100) * 100;
+        var adjusted_height = Math.ceil(raw_height / 100) * 100;
 
 
         var svg_div = display_window.append("div")
-            .style("padding", "10px");
+            .style("padding", "10px")
+            .style("width", "calc(100% - 20px)")
+            .style("height", "calc(100% - 163px)");
         var svg = svg_div.append("svg")
-            .attr("viewBox", (input_dimension["x_min"] - 10) + " "+ (input_dimension["y_min"] - 10) + " " + adjusted_width + " " + adjusted_height)
-            .attr("width", adjusted_width + "px")
-            .attr("height", adjusted_height + "px");
+            .attr("viewBox", (input_dimension["x_min"] - 30) + " "+ (input_dimension["y_min"] - 10) + " " + adjusted_width + " " + adjusted_height)
+            .attr("width", "100%")
+            .attr("height", "100%");
 
-        draw_walls(svg, adjusted_result["wall"]);
-        draw_stacks(svg, adjusted_result["aisle"]);
-        draw_icons(svg, adjusted_result["landmark"]);
-        highlight_stack(svg, adjusted_result["aisles"]["aisle_id"], adjusted_result["aisles"]["side"]);
+
+        draw_walls(svg, adjusted_result["floors"][0]["walls"]);
+        draw_stacks(svg, adjusted_result["floors"][0]["aisles"]);
+        draw_icons(svg, adjusted_result["floors"][0]["landmarks"]);
+        highlight_stack(svg, adjusted_result["aisles"]);
 
 
 
@@ -256,32 +261,107 @@ function draw_map(libname, callno, return_result) {
 }
 
 /*
- It is a function that take an array list of objects and compares all of their x1, y1, x2, y2 and return an object
- containing the largest and smallest value of the x1 and x2, the largest and smallest value of y1 and y2
+ It is a function that takes a floor object and returns the extreme coordinates of the dimension of the walls, aisles
+ and landmarks
+ In this scenario it should take in the walls list of the JSON object, as there should not be any objects existing
+ outside of the walls, so the dimension of the walls should be the dimension of the svg
 
 
  Input parameters:
 
- object_list:
- Array of Objects
- [{x1: float, y1: float, x2: float, y2: float}]
+ floor_object:
+ JSON floor object
 
  Return: Object {x_min: float, y_min: float, x_max: float, y_max: float}
  */
-function calc_svg_dimension(object_list){
-    var x_min, y_min, x_max, y_max;
-    for(var i = 0; i < object_list.length; i++){
-        if(i == 0){
-            x_min = Math.min(object_list[i]["x1"], object_list[i]["x2"]);
-            x_max = Math.max(object_list[i]["x1"], object_list[i]["x2"]);
-            y_min = Math.min(object_list[i]["y1"], object_list[i]["y2"]);
-            y_max = Math.max(object_list[i]["y1"], object_list[i]["y2"]);
+function calc_svg_dimension(floor_object){
+    var x_min = 0, y_min = 0, x_max = 0, y_max = 0;
+    var set = false;
+    var i;
+
+    for(i = 0; i < floor_object["walls"].length; i++){
+        if(set == false){
+            x_min = Math.min(floor_object["walls"][i]["start_x"], floor_object["walls"][i]["end_x"]);
+            x_max = Math.max(floor_object["walls"][i]["start_x"], floor_object["walls"][i]["end_x"]);
+            y_min = Math.min(floor_object["walls"][i]["start_y"], floor_object["walls"][i]["end_y"]);
+            y_max = Math.max(floor_object["walls"][i]["start_y"], floor_object["walls"][i]["end_y"]);
+            set = true;
         }
         else {
-            x_min = Math.min(x_min, object_list[i]["x1"], object_list[i]["x2"]);
-            x_max = Math.max(x_max, object_list[i]["x1"], object_list[i]["x2"]);
-            y_min = Math.min(y_min, object_list[i]["y1"], object_list[i]["y2"]);
-            y_max = Math.max(y_max, object_list[i]["y1"], object_list[i]["y2"]);
+            x_min = Math.min(x_min, floor_object["walls"][i]["start_x"], floor_object["walls"][i]["end_x"]);
+            x_max = Math.max(x_max, floor_object["walls"][i]["start_x"], floor_object["walls"][i]["end_x"]);
+            y_min = Math.min(y_min, floor_object["walls"][i]["start_y"], floor_object["walls"][i]["end_y"]);
+            y_max = Math.max(y_max, floor_object["walls"][i]["start_y"], floor_object["walls"][i]["end_y"]);
+        }
+    }
+
+    for(i = 0; i < floor_object["aisles"].length; i++){
+        if(set == false){
+            x_min = calc_corner_x(floor_object["aisles"][i]["center_x"], floor_object["aisles"][i]["width"], floor_object["aisles"][i]["height"], floor_object["aisles"][i]["rotation"])["min"];
+            x_max = calc_corner_x(floor_object["aisles"][i]["center_x"], floor_object["aisles"][i]["width"], floor_object["aisles"][i]["height"], floor_object["aisles"][i]["rotation"])["max"];
+            y_min = calc_corner_y(floor_object["aisles"][i]["center_y"], floor_object["aisles"][i]["width"], floor_object["aisles"][i]["height"], floor_object["aisles"][i]["rotation"])["min"];
+            y_max = calc_corner_y(floor_object["aisles"][i]["center_y"], floor_object["aisles"][i]["width"], floor_object["aisles"][i]["height"], floor_object["aisles"][i]["rotation"])["max"];
+            set = true;
+        }
+        else {
+            x_min = Math.min(x_min, calc_corner_x(floor_object["aisles"][i]["center_x"], floor_object["aisles"][i]["width"], floor_object["aisles"][i]["height"], floor_object["aisles"][i]["rotation"])["min"]);
+            x_max = Math.max(x_max, calc_corner_x(floor_object["aisles"][i]["center_x"], floor_object["aisles"][i]["width"], floor_object["aisles"][i]["height"], floor_object["aisles"][i]["rotation"])["max"]);
+            y_min = Math.min(y_min, calc_corner_y(floor_object["aisles"][i]["center_y"], floor_object["aisles"][i]["width"], floor_object["aisles"][i]["height"], floor_object["aisles"][i]["rotation"])["min"]);
+            y_max = Math.max(y_max, calc_corner_y(floor_object["aisles"][i]["center_y"], floor_object["aisles"][i]["width"], floor_object["aisles"][i]["height"], floor_object["aisles"][i]["rotation"])["max"]);
+        }
+    }
+
+    for(i = 0; i < floor_object["landmarks"].length; i++){
+        if(set == false){
+            x_min = calc_corner_x(floor_object["aisles"][i]["center_x"], floor_object["landmarks"][i]["width"], floor_object["landmarks"][i]["height"], floor_object["landmarks"][i]["rotation"])["min"];
+            x_max = calc_corner_x(floor_object["aisles"][i]["center_x"], floor_object["landmarks"][i]["width"], floor_object["landmarks"][i]["height"], floor_object["landmarks"][i]["rotation"])["max"];
+            y_min = calc_corner_y(floor_object["aisles"][i]["center_y"], floor_object["landmarks"][i]["width"], floor_object["landmarks"][i]["height"], floor_object["landmarks"][i]["rotation"])["min"];
+            y_max = calc_corner_y(floor_object["aisles"][i]["center_y"], floor_object["landmarks"][i]["width"], floor_object["landmarks"][i]["height"], floor_object["landmarks"][i]["rotation"])["max"];
+            set = true;
+        }
+        else {
+            x_min = Math.min(x_min, calc_corner_x(floor_object["landmarks"][i]["center_x"], floor_object["landmarks"][i]["width"], floor_object["landmarks"][i]["height"], floor_object["landmarks"][i]["rotation"])["min"]);
+            x_max = Math.max(x_max, calc_corner_x(floor_object["landmarks"][i]["center_x"], floor_object["landmarks"][i]["width"], floor_object["landmarks"][i]["height"], floor_object["landmarks"][i]["rotation"])["max"]);
+            y_min = Math.min(y_min, calc_corner_y(floor_object["landmarks"][i]["center_y"], floor_object["landmarks"][i]["width"], floor_object["landmarks"][i]["height"], floor_object["landmarks"][i]["rotation"])["min"]);
+            y_max = Math.max(y_max, calc_corner_y(floor_object["landmarks"][i]["center_y"], floor_object["landmarks"][i]["width"], floor_object["landmarks"][i]["height"], floor_object["landmarks"][i]["rotation"])["max"]);
+        }
+    }
+
+
+
+    function calc_corner_x(center_x, width, height, rotation){
+        //+w+h
+        var one = center_x + (Math.cos(rotation / 180 * Math.PI) * width / 2) - (Math.sin(rotation / 180 * Math.PI) * height / 2);
+
+        //+w-h
+        var two = center_x + (Math.cos(rotation / 180 * Math.PI) * width / 2) - (Math.sin(rotation / 180 * Math.PI) * height / 2 * -1);
+
+        //-w-h
+        var three = center_x + (Math.cos(rotation / 180 * Math.PI) * width / 2 * -1) - (Math.sin(rotation / 180 * Math.PI) * height / 2 * -1);
+
+        //-w+h
+        var four = center_x + (Math.cos(rotation / 180 * Math.PI) * width / 2 * -1) - (Math.sin(rotation / 180 * Math.PI) * height / 2);
+        return {
+            min: Math.min(one ,two, three, four),
+            max: Math.max(one ,two, three, four)
+        }
+    }
+
+    function calc_corner_y(center_y, width, height, rotation){
+        //+w+h
+        var one = center_y + (Math.sin(rotation / 180 * Math.PI) * width / 2) + (Math.cos(rotation / 180 * Math.PI) * height / 2);
+
+        //+w-h
+        var two = center_y + (Math.sin(rotation / 180 * Math.PI) * width / 2) + (Math.cos(rotation / 180 * Math.PI) * height / 2 * -1);
+
+        //-w-h
+        var three = center_y + (Math.sin(rotation / 180 * Math.PI) * width / 2 * -1) + (Math.cos(rotation / 180 * Math.PI) * height / 2 * -1);
+
+        //-w+h
+        var four = center_y + (Math.sin(rotation / 180 * Math.PI) * width / 2 * -1) + (Math.cos(rotation / 180 * Math.PI) * height / 2);
+        return {
+            min: Math.min(one ,two, three, four),
+            max: Math.max(one ,two, three, four)
         }
     }
 
@@ -310,10 +390,10 @@ function calc_svg_dimension(object_list){
 function draw_walls(d3_svg, object_list){
     for(var i = 0; i < object_list.length; i++){
         d3_svg.append("line")
-            .attr("x1", object_list[i]["x1"])
-            .attr("y1", object_list[i]["y1"])
-            .attr("x2", object_list[i]["x2"])
-            .attr("y2", object_list[i]["y2"])
+            .attr("x1", object_list[i]["start_x"])
+            .attr("y1", object_list[i]["start_y"])
+            .attr("x2", object_list[i]["end_x"])
+            .attr("y2", object_list[i]["end_y"])
             .style("stroke-width", "3px")
             .style("stroke", wall_color);
     }
@@ -336,37 +416,35 @@ function draw_stacks(d3_svg, object_list){
     for(var i = 0; i < object_list.length; i++){
 
         var g = d3_svg.append("g")
-            .attr("id", "aid" + object_list[i]["aid"])
+            .attr("id", "aid" + object_list[i]["aisle_id"])
             .attr("transform", "rotate(" + object_list[i]["rotation"] + " " + object_list[i]["center_x"] + " " + object_list[i]["center_y"] + ")")
             .style("fill", non_selected_stack_color);
 
-        if(object_list[i]["sides"] == 2){
+        if(object_list[i]["is_double_sided"]){
             g.append("rect")
                 .attr("class", "side0")
                 .attr("x", object_list[i]["center_x"] - (object_list[i]["width"] / 2))
-                .attr("y", object_list[i]["center_y"] - (object_list[i]["length"] / 2))
+                .attr("y", object_list[i]["center_y"] - (object_list[i]["height"] / 2))
                 .attr("width", (object_list[i]["width"] / 2) - 2)
-                .attr("height", (object_list[i]["length"]));
+                .attr("height", (object_list[i]["height"]));
             g.append("rect")
                 .attr("class", "side1")
                 .attr("x", object_list[i]["center_x"] + 2)
-                .attr("y", object_list[i]["center_y"] - (object_list[i]["length"] / 2))
+                .attr("y", object_list[i]["center_y"] - (object_list[i]["height"] / 2))
                 .attr("width", (object_list[i]["width"] / 2) - 2)
-                .attr("height", (object_list[i]["length"]));
+                .attr("height", (object_list[i]["height"]));
             // g.append("circle")
             //     .attr("cx", object_list[i]["center_x"])
             //     .attr("cy", object_list[i]["center_y"])
             //     .attr("r", 2)
             //     .style("fill", "black");
         }
-        else if(object_list[i]["sides"] == 1){
-            d3_svg.append("rect")
+        else{
+            g.append("rect")
                 .attr("x", object_list[i]["center_x"] - (object_list[i]["width"] / 2))
-                .attr("y", object_list[i]["center_y"] - (object_list[i]["length"] / 2))
+                .attr("y", object_list[i]["center_y"] - (object_list[i]["height"] / 2))
                 .attr("width", object_list[i]["width"])
-                .attr("height", object_list[i]["length"]);
-                // .attr("transform", "rotate(" + object_list[i]["rotation"] + " " + object_list[i]["width"] + " " + object_list[i]["length"] + ")")
-                // .style("fill", non_selected_stack_color);
+                .attr("height", object_list[i]["height"]);
         }
     }
 }
@@ -387,53 +465,54 @@ function draw_stacks(d3_svg, object_list){
 function draw_icons(d3_svg, object_list){
     for(var i = 0; i < object_list.length; i++){
         var x = object_list[i]["center_x"] - (object_list[i]["width"] / 2);
-        var y = object_list[i]["center_y"] - (object_list[i]["length"] / 2);
-        var padding = 10;
-        var scaling = Math.floor((Math.min(object_list[i]["width"], object_list[i]["length"]) - padding * 2) / 20);
+        var y = object_list[i]["center_y"] - (object_list[i]["height"] / 2);
+        var padding = 20;
+        var scaling = Math.floor((Math.min(object_list[i]["width"], object_list[i]["height"]) - padding * 2) / 20);
         scaling = Math.max(scaling, 0);
         d3_svg.append("rect")
             .attr("x", x)
             .attr("y", y)
             .attr("width", object_list[i]["width"])
-            .attr("height", object_list[i]["length"])
+            .attr("height", object_list[i]["height"])
+            .attr("transform", "rotate(" + object_list[i]["rotation"] + ")")
             .style("fill", icon_background_color);
 
-        if(object_list[i]["lname"] == "Elevator"){
+        if(object_list[i]["landmark_type"] == "elevator"){
             d3_svg.append("path")
                 .attr("d",  "M7,2L11,6H8V10H6V6H3L7,2M17,10L13,6H16V2H18V6H21L17,10M7,12H17A2,2 0 0,1 19,14V20A2,2 0 0,1 17,22H7A2,2 0 0,1 5,20V14A2,2 0 0,1 7,12M7,14V20H17V14H7Z")
                 .attr("fill", "white")
-                .attr("transform", "translate(" + (x + (object_list[i]["width"] - 24 * scaling) / 2) + ", " + (y + (object_list[i]["length"] - 24 * scaling) / 2) + ")scale(" + scaling + ")");
+                .attr("transform", "translate(" + (x + (object_list[i]["width"] - 24 * scaling) / 2) + ", " + (y + (object_list[i]["height"] - 24 * scaling) / 2) + ")scale(" + scaling + ")");
         }
-        else if(object_list[i]["lname"] == "Restroom"){
+        else if(object_list[i]["landmark_type"] == "toilet"){
             d3_svg.append("path")
                 .attr("d",  "M7.5,2A2,2 0 0,1 9.5,4A2,2 0 0,1 7.5,6A2,2 0 0,1 5.5,4A2,2 0 0,1 7.5,2M6,7H9A2,2 0 0,1 11,9V14.5H9.5V22H5.5V14.5H4V9A2,2 0 0,1 6,7M16.5,2A2,2 0 0,1 18.5,4A2,2 0 0,1 16.5,6A2,2 0 0,1 14.5,4A2,2 0 0,1 16.5,2M15,22V16H12L14.59,8.41C14.84,7.59 15.6,7 16.5,7C17.4,7 18.16,7.59 18.41,8.41L21,16H18V22H15Z")
                 .attr("fill", "white")
-                .attr("transform", "translate(" + (x + (object_list[i]["width"] - 24 * scaling) / 2) + ", " + (y + (object_list[i]["length"] - 24 * scaling) / 2) + ")scale(" + scaling + ")");
+                .attr("transform", "translate(" + (x + (object_list[i]["width"] - 24 * scaling) / 2) + ", " + (y + (object_list[i]["height"] - 24 * scaling) / 2) + ")scale(" + scaling + ")");
         }
-        else if(object_list[i]["lname"] == "Stairs"){
+        else if(object_list[i]["landmark_type"] == "stairs"){
             d3_svg.append("path")
                 .attr("d",  "M15,5V9H11V13H7V17H3V20H10V16H14V12H18V8H22V5H15Z")
                 .attr("fill", "white")
-                .attr("transform", "translate(" + (x + (object_list[i]["width"] - 24 * scaling) / 2) + ", " + (y + (object_list[i]["length"] - 24 * scaling) / 2) + ")scale(" + scaling + ")");
+                .attr("transform", "translate(" + (x + (object_list[i]["width"] - 24 * scaling) / 2) + ", " + (y + (object_list[i]["height"] - 24 * scaling) / 2) + ")scale(" + scaling + ")");
         }
     }
 }
 
 /*
- It is a function that take an object, which should come from the api, and changes the appropriate values in them so that
- the object can be used later for drawing the map correctly, and return the corrected object. Values in the new object
- are altered, but the input object is remained untouched
+ It is a function that take an object, which should come from the api with the JSON format, and changes the appropriate
+ values in them so that the object can be used later for drawing the map correctly, and return the corrected object.
+ Values in the new object are altered, but the input object is remained untouched
  All the y-related values are being * -1 because the coordinate system created by the editor is different from the one
  used by the svg, where their y-coordinates are reversed
  All the x-related values are being * 1 so as that make sure they are now numbers but not strings, so that calculations
  can be done on them in the later part
+ Rotation is also being * -1 because they are rotating in different directions in different systems, and here is to
+ correct them into the same direction
 
  Input parameters:
 
  input_data:
- Objects{
-
-         }
+ JSON floor objects
 
  Return:
  Objects{
@@ -442,21 +521,32 @@ function draw_icons(d3_svg, object_list){
  */
 function reformat_data(input_data){
     var output_data = JSON.parse(JSON.stringify(input_data));
-    var i;
-    for(i = 0; i < output_data["aisle"].length; i++){
-        output_data["aisle"][i]["center_x"] = 1 * output_data["aisle"][i]["center_x"];
-        output_data["aisle"][i]["center_y"] = -1 * output_data["aisle"][i]["center_y"];
+    var i, j;
+
+    for(i = 0; i < output_data["floors"].length; i++){
+
+        for(j = 0; j < output_data["floors"][i]["aisles"].length; j++){
+            output_data["floors"][i]["aisles"][j]["center_x"] = 1 * output_data["floors"][i]["aisles"][j]["center_x"];
+            output_data["floors"][i]["aisles"][j]["center_y"] = -1 * output_data["floors"][i]["aisles"][j]["center_y"];
+            output_data["floors"][i]["aisles"][j]["rotation"] = -1 * output_data["floors"][i]["aisles"][j]["rotation"];
+
+        }
+
+        for(j = 0; j < output_data["floors"][i]["walls"].length; j++){
+            output_data["floors"][i]["walls"][j]["start_x"] = 1 * output_data["floors"][i]["walls"][j]["start_x"];
+            output_data["floors"][i]["walls"][j]["end_x"] = 1 * output_data["floors"][i]["walls"][j]["end_x"];
+            output_data["floors"][i]["walls"][j]["start_y"] = -1 * output_data["floors"][i]["walls"][j]["start_y"];
+            output_data["floors"][i]["walls"][j]["end_y"] = -1 * output_data["floors"][i]["walls"][j]["end_y"];
+        }
+
+        for(j = 0; j < output_data["floors"][i]["landmarks"].length; j++){
+            output_data["floors"][i]["landmarks"][j]["center_x"] = 1 * output_data["floors"][i]["landmarks"][j]["center_x"];
+            output_data["floors"][i]["landmarks"][j]["center_y"] = -1 * output_data["floors"][i]["landmarks"][j]["center_y"];
+            output_data["floors"][i]["landmarks"][j]["rotation"] = -1 * output_data["floors"][i]["landmarks"][j]["rotation"];
+        }
+
     }
-    for(i = 0; i < output_data["wall"].length; i++){
-        output_data["wall"][i]["x1"] = 1 * output_data["wall"][i]["x1"];
-        output_data["wall"][i]["x2"] = 1 * output_data["wall"][i]["x2"];
-        output_data["wall"][i]["y1"] = -1 * output_data["wall"][i]["y1"];
-        output_data["wall"][i]["y2"] = -1 * output_data["wall"][i]["y2"];
-    }
-    for(i = 0; i < output_data["landmark"].length; i++){
-        output_data["landmark"][i]["center_x"] = 1 * output_data["landmark"][i]["center_x"];
-        output_data["landmark"][i]["center_y"] = -1 * output_data["landmark"][i]["center_y"];
-    }
+
     return output_data
 }
 
@@ -468,20 +558,26 @@ function reformat_data(input_data){
  Input parameters:
 
  d3_svg: d3 selection element
- id: int
- side: int
+ target_list:
+ Array of objects
+ [{aisle_id: int, side: int}]
 
 
  Return: null
  */
-function highlight_stack(d3_svg, id, side){
-    if(!d3_svg.select("#aid" + id).empty()){
-        if(d3_svg.select("#aid" + id).selectAll("rect").size() == 2){
-            d3_svg.select("#aid" + id).select(".side" + side)
-                .style("fill", selected_stack_color);
-        }
-        else{
-            d3_svg.select("#aid" + id).select("rect").style("fill", selected_stack_color);
+function highlight_stack(d3_svg, target_list){
+    var i;
+    for(i = 0; i < target_list.length; i++){
+        var id = target_list[i]["aisle_id"];
+        var side = target_list[i]["side"];
+        if(!d3_svg.select("#aid" + id).empty()){
+            if(d3_svg.select("#aid" + id).selectAll("rect").size() == 2){
+                d3_svg.select("#aid" + id).select(".side" + side)
+                    .style("fill", selected_stack_color);
+            }
+            else{
+                d3_svg.select("#aid" + id).select("rect").style("fill", selected_stack_color);
+            }
         }
     }
 }
@@ -526,14 +622,14 @@ function draw_map_in_new_window(body, libname, callno, return_result){
     var library_name_div = title_bar_div.append("div")
         .style("padding", "10px")
         .style("font-size", "38px")
-        .text("Floor " + return_result["floor"]["fname"] + " " + libname + " Library");
+        .text("Floor " + adjusted_result["floors"][0]["floor_name"] + " " + libname + " Library");
 
     var call_num_div = title_bar_div.append("div")
         .style("padding", "10px")
         .style("font-size", "23px")
         .text("Call Number: " + callno);
 
-    var input_dimension = calc_svg_dimension(adjusted_result["wall"]);
+    var input_dimension = calc_svg_dimension(adjusted_result["floors"][0]);
     var raw_width = input_dimension["x_max"] - input_dimension["x_min"];
     var raw_height = input_dimension["y_max"] - input_dimension["y_min"];
     var adjusted_width = Math.ceil(raw_width / 100) * 100 + 20;
@@ -548,10 +644,10 @@ function draw_map_in_new_window(body, libname, callno, return_result){
         .attr("width", adjusted_width + "px")
         .attr("height", adjusted_height + "px");
 
-    draw_walls(svg, adjusted_result["wall"]);
-    draw_stacks(svg, adjusted_result["aisle"]);
-    draw_icons(svg, adjusted_result["landmark"]);
-    highlight_stack(svg, adjusted_result["aid"], adjusted_result["call_range"]["side"]);
+    draw_walls(svg, adjusted_result["floors"][0]["walls"]);
+    draw_stacks(svg, adjusted_result["floors"][0]["aisles"]);
+    draw_icons(svg, adjusted_result["floors"][0]["landmarks"]);
+    highlight_stack(svg, adjusted_result["aisles"]);
 }
 
 
