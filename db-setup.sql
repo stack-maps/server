@@ -74,7 +74,7 @@ CREATE TABLE aisle (
     height          FLOAT       NOT NULL    DEFAULT 0,
     rotation        FLOAT       NOT NULL    DEFAULT 0,
     is_double_sided INT(1)      NOT NULL,
-    aisle_area      INT         NOT NULL,
+    aisle_area      INT,
                     INDEX (aisle_area),
                     FOREIGN KEY (aisle_area) REFERENCES aisle_area(aisle_area_id)
                     ON UPDATE CASCADE ON DELETE CASCADE,
