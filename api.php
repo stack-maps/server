@@ -59,7 +59,7 @@
      Response format:
      'success':     Whether login was successful.
      'error':       The error message, if not successful.
-     'token':       The token for this login, if successful. This is sed as 
+     'token':       The token for this login, if successful. This is used as 
                     quick credential checks for subsequent db modifications. 
      */
     function login() {
@@ -306,6 +306,10 @@
      use another call number system or fine tune how the call numbers should be 
      parsed.
 
+     For different sizes, we use a simple suffix system to determine whether we
+     are in the same size. A call number will have zero or more '+' at the end,
+     which we can use to compare to the 'collection' property of the call range.
+
      POST parameters:
      'library_name':    Name of the library to find the book from.
      'call_number':     The book's call number in a string representation. For
@@ -333,6 +337,11 @@
         // Parse parameters.
         $call_number = $_POST['call_number'];
         $library_name = $_POST['library_name'];
+        $collection = '';
+
+        if (preg_match('(\++$)', $call_number, $matches)) {
+            $collection = $matches[0];
+        }
 
         // Verify the library is valid.
         $con = connect();
@@ -349,7 +358,8 @@
         $sql = 'SELECT *
                   FROM call_range
                   JOIN aisle ON call_range.aisle = aisle.aisle_id
-                 WHERE aisle IN 
+                 WHERE collection = ?
+                   AND aisle IN 
                        (SELECT aisle_id 
                           FROM aisle 
                          WHERE floor IN 
@@ -358,7 +368,11 @@
                                  WHERE library = ?
                                )
                        )';
-        $call_ranges = get_data($con, $sql, 'i', $library['library_id']);
+        $call_ranges = get_data($con, $sql, 'si', $collection, $library['library_id']);
+
+        if (count($call_ranges) === 0) {
+          error("get_book_location: The book is not found in this library.");
+        }
 
         $aisles = array();
         $floor_ids = array();
@@ -377,34 +391,33 @@
                     $aisle_element['side'] = $call_range['side'];
                 }
 
-                array_push($aisles, $aisle_element);
+                // Add fid to the list of floors to fetch
+                $fid = $call_range['floor'];
 
+                if (!in_array($fid, $floor_ids)) {
+                    array_push($floor_ids, $fid);
+                }
+
+                // Add aisle element to array.
+                array_push($aisles, $aisle_element);
             }
         }
 
-        // TODO
+        // Now fetch each floor.
+        $floors = array();
 
-        if(count($result) != 1){
-          error("The book is not found");
+        foreach ($floor_ids as $fid) {
+            array_push($floors, get_floor($con, $fid));
         }
-        //echo json_encode($result[0]);
-        $response['call_range'] = $result[0];
-        $aid = $result[0]->aisle;
-        $sql = "SELECT * FROM Aisle WHERE aid = $aid";
-        $fid = getData($sql)[0]->floor;
-        $sql = "SELECT * FROM Floor WHERE fid = $fid";
-        //echo json_encode(getData($sql)[0]);
-        $response['floor'] = getData($sql)[0];
-        $response['aid'] = $aid;
-        $sql = "SELECT * FROM Aisle WHERE floor = $fid";
-        //echo json_encode(getData($sql));
-        $response['aisle'] = getData($sql);
-        $sql = "SELECT * FROM Wall WHERE floor = $fid";
-        //echo json_encode(getData($sql));
-        $response['wall'] = getData($sql);
-        $sql = "SELECT * FROM Landmark WHERE floor = $fid";
-        //echo json_encode(getData($sql));
-        $response['landmark'] = getData($sql);
+
+        // Close database.
+        $con->close();
+
+        // Send response.
+        $response['success'] = TRUE;
+        $response['floors'] = $floors;
+        $response['aisles'] = $aisles;
+
         echo json_encode($response);
     }
 
@@ -468,127 +481,159 @@
      'error':   The error message, if not successful.
      */
     function update_floor() {
-        checkToken();
+        $con = connect();
 
-        $fid = $_POST['fid'];
-        $info = $_POST['floor_stuff'];
+        // Check user credentials.
+        check_token($con, $_POST['token']);
 
-        // TODO: this is probably the longest function in the file. A floor
-        // consists of walls, aisles, and aisle areas. For each of these objects
-        // we first need to remove existing objects in their respective tables
-        // on that floor, then add the new ones according to the data sent by
-        // the user.
+        // Parse parameters.
+        $floor = json_decode($_POST['floor'], TRUE);
 
-        // first, delete all things related to this fid -> use DELETE CASCADE
-        runQuery("DELETE FROM Wall WHERE floor = $fid");
-        runQuery("DELETE FROM Aisle WHERE floor = $fid");
-        runQuery("DELETE FROM AisleArea WHERE floor = $fid");
-        runQuery("DELETE FROM Landmark WHERE floor = $fid");
+        // Perform validation.
+        validate_floor($floor);
 
-        // second, insert all things from POST
-        $obj = json_decode($info);
-        $aislearea = $obj->AisleArea;
-        foreach($aislearea as $aa){
-            $aisle = $aa->Aisle;
-            $cx = $aa->center_x;
-            $cy = $aa->center_y;
-            $length = $aa->length;
-            $width = $aa->width;
-            $rotation = $aa->rotation;
-            // add aisle area to database
-            runQuery("INSERT INTO AisleArea (center_x, center_y, length, width, rotation, floor)
-                      VALUES ($cx, $cy, $length, $width, $rotation, $fid)");
+        $floor_id = $floor['floor_id'];
 
-            // select the most recently added AisleArea
-            $aaid = getData("SELECT aaid FROM AisleArea ORDER BY aaid LIMIT 1");
-            foreach($aisle as $a){
-                // add aisle  to database
-                $cx = $a->center_x;
-                $cy = $a->center_y;
-                $length = $a->length;
-                $width = $a->width;
-                $rotation = $a->rotation;
-                $sides = $a->sides;
-                $callrange = $a->call_range;
+        // Verify the floor exists.
+        $sql = 'SELECT floor_id FROM floor WHERE floor_id = ?';
 
-                // insert aisle to database
-                runQuery("INSERT INTO Aisle (center_x, center_y, length, width, rotation, sides, aislearea, floor)
-                          VALUES ($cx, $cy, $length, $width, $rotation, $sides, $aaid, $fid)");
+        if (count(get_data($con, $sql, 'i', $floor_id)) != 1) {
+            error('update_floor: Given floor is not found.');
+        }
 
-                // select the most recently added Aisle
-                $aid = getData("SELECT aid FROM Aisle ORDER BY $aaid LIMIT 1");
-                foreach($callrange as $cr){
-                    $collection = $cr->collection;
-                    $callstart = $cr->callstart;
-                    $callend = $cr->callend;
-                    $side = $cr->side;
-                    $aisle = $cr->aisle;
+        // Delete existing objects on the floor.
+        $sql = 'DELETE FROM wall WHERE floor = ?';
+        run_query($con, $sql, 'i', $floor_id);
 
-                    // insert call range to database
-                    runQuery("INSERT INTO Call_Range (collection, callstart, callend, side, aisle)
-                              VALUES ($collection, '$callstart', '$callend', $side, $aisle)");
+        $sql = 'DELETE FROM aisle WHERE floor = ?';
+        run_query($con, $sql, 'i', $floor_id);
+
+        $sql = 'DELETE FROM aisle_area WHERE floor = ?';
+        run_query($con, $sql, 'i', $floor_id);
+
+        $sql = 'DELETE FROM landmark WHERE floor = ?';
+        run_query($con, $sql, 'i', $floor_id);
+
+        // Add walls into the database.
+        if (array_key_exists('walls', $floor)) {
+            $sql = 'INSERT INTO wall (start_x, start_y, end_x, end_y, floor)
+                    VALUES (?, ?, ?, ?, ?)';
+
+            foreach ($floor['walls'] as $wall) {
+                run_query($con, $sql, 'ddddi', $wall['start_x'], 
+                    $wall['start_y'], $wall['end_x'], $wall['end_y'], $floor_id);
+            }
+        }
+
+        // Add landmarks into the database.
+        if (array_key_exists('landmarks', $floor)) {
+            $sql = 'INSERT INTO landmark (landmark_type, center_x, center_y, width, height, rotation, floor)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)';
+
+            foreach ($floor['landmarks'] as $landmark) {
+                run_query($con, $sql, 'sdddddi', $landmark['landmark_type'], 
+                    $landmark['center_x'], $landmark['center_y'], 
+                    $landmark['width'], $landmark['height'], 
+                    $landmark['rotation'], $floor_id);
+            }
+        }
+
+        // Add aisles into the database.
+        if (array_key_exists('aisles', $floor)) {
+            $sql = 'INSERT INTO aisle (center_x, center_y, width, height, rotation, is_double_sided, floor)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)';
+
+            foreach ($floor['aisles'] as $aisle) {
+                run_query($con, $sql, 'dddddii', $aisle['center_x'], 
+                    $aisle['center_y'], $aisle['width'], $aisle['height'], 
+                    $aisle['rotation'], intval($aisle['is_double_sided']), 
+                    $floor_id);
+
+                // Insert call ranges.
+                if (array_key_exists('call_ranges', $aisle)) {
+                    // Grab the id.
+                    $sql2 = 'SELECT aisle_id FROM aisle ORDER BY aisle_id DESC LIMIT 1';
+                    $aisle_id = get_data($con, $sql2, '')[0]['aisle_id'];
+
+                    $sql3 = 'INSERT INTO call_range (collection, call_start, call_end, side, aisle)
+                             VALUES (?, ?, ?, ?, ?)';
+
+                    foreach ($aisle['call_ranges'] as $call_range) {
+                        $side = 0;
+
+                        if (array_key_exists('side', $call_range)) {
+                            $side = $call_range['side'];
+                        }
+
+                        run_query($con, $sql3, 'sssii', 
+                            $call_range['collection'], 
+                            $call_range['call_start'], $call_range['call_end'], 
+                            $side, $aisle_id);
+                    }
                 }
             }
         }
 
-        $aisle = $obj->Aisle;
-        foreach($aisle as $a){
-          // add aisle  to database
-          $cx = $a->center_x;
-          $cy = $a->center_y;
-          $length = $a->length;
-          $width = $a->width;
-          $rotation = $a->rotation;
-          $sides = $a->sides;
-          $callrange = $a->call_range;
+        // Add aisle areas into the database.
+        if (array_key_exists('aisle_areas', $floor)) {
+            $sql = 'INSERT INTO aisle_area (center_x, center_y, width, height, rotation, floor)
+                    VALUES (?, ?, ?, ?, ?, ?)';
 
-          // insert aisle to database
-          runQuery("INSERT INTO Aisle (center_x, center_y, length, width, rotation, sides, aislearea, floor)
-                    VALUES ($cx, $cy, $length, $width, $rotation, $sides, NULL, $fid)");
+            foreach ($floor['aisle_areas'] as $aisle_area) {
+                run_query($con, $sql, 'dddddi', $aisle_area['center_x'], 
+                    $aisle_area['center_y'], $aisle_area['width'],
+                    $aisle_area['height'], $aisle_area['rotation'], $floor_id);
 
-          // select the most recently added Aisle
-          $aid = getData("SELECT aid FROM Aisle ORDER BY aid DESC LIMIT 1")[0]->aid;
-          foreach($callrange as $cr){
-              $collection = $cr->collection;
-              $callstart = $cr->callstart;
-              $callend = $cr->callend;
-              $side = $cr->side;
+                if (array_key_exists('aisles', $aisle_area)) {
+                    // Grab the id.
+                    $sql2 = 'SELECT aisle_area_id FROM aisle_area ORDER BY aisle_area_id DESC LIMIT 1';
+                    $aisle_area_id = get_data($con, $sql2, '')[0]['aisle_area_id'];
 
-              // insert call range to database
-              runQuery("INSERT INTO Call_Range (collection, callstart, callend, side, aisle)
-                        VALUES ('$collection', '$callstart', '$callend', $side, $aid)");
-          }
-      }
 
-        $wall = $obj->Wall;
-        foreach($wall as $w){
-            $x1 = $w->x1;
-            $y1 = $w->y1;
-            $x2 = $w->x2;
-            $y2 = $w->y2;
+                    $sql3 = 'INSERT INTO aisle (center_x, center_y, width, height, rotation, is_double_sided, aisle_area, floor)
+                             VALUES (?, ?, ?, ?, ?, ?, ?, ?)';
 
-            // insert call range to database
-            runQuery("INSERT INTO Wall (x1, y1, x2, y2, floor)
-                      VALUES ($x1, $y1, $x2, $y2, $fid)");
+                    foreach ($aisle_area['aisles'] as $aisle) {
+                        run_query($con, $sql3, 'dddddiii', $aisle['center_x'], 
+                            $aisle['center_y'], $aisle['width'], 
+                            $aisle['height'], $aisle['rotation'], 
+                            intval($aisle['is_double_sided']), $aisle_area_id,
+                            $floor_id);
+
+                        // Insert call ranges.
+                        if (array_key_exists('call_ranges', $aisle)) {
+                            // Grab the id.
+                            $sql4 = 'SELECT aisle_id FROM aisle ORDER BY aisle_id DESC LIMIT 1';
+                            $aisle_id = get_data($con, $sql4, '')[0]['aisle_id'];
+
+                            $sql5 = 'INSERT INTO call_range (collection, call_start, call_end, side, aisle)
+                                     VALUES (?, ?, ?, ?, ?)';
+
+                            foreach ($aisle['call_ranges'] as $call_range) {
+                                $side = 0;
+
+                                if (array_key_exists('side', $call_range)) {
+                                    $side = $call_range['side'];
+                                }
+
+                                run_query($con, $sql5, 'sssii', 
+                                    $call_range['collection'], 
+                                    $call_range['call_start'], 
+                                    $call_range['call_end'], $side, $aisle_id);
+                            }
+                        }
+                    }
+                }
+            }
         }
 
-        $landmark = $obj->Landmark;
-        foreach($landmark as $lm){
-          $lname = $lm->lname;
-          $center_x = $lm->center_x;
-          $center_y = $lm->center_y;
-          $rotation = $lm->rotation;
-          $length = $lm->length;
-          $width = $lm->width;
+        // Close database.
+        $con->close();
 
-          // insert call range to database
-          runQuery("INSERT INTO Landmark (lname, center_x, center_y, rotation, length, width, floor)
-                    VALUES ('$lname', $center_x, $center_y, $rotation, $length, $width, $fid)");
+        // Send response.
+        $response['success'] = TRUE;
 
-         }
-
-         $response["success"] = TRUE;
-         echo json_encode($response);
+        echo json_encode($response);
     }
 
 
@@ -729,6 +774,217 @@
     //////////////////////
 
     /**
+     Validates floor according to the specified JSON format. May report an error 
+     if anything is not in the right format.
+
+     Arguments:
+     $floor:    The floor that requires validation.
+
+     Return value:
+     Nothing if valid, an exception otherwise.
+     */
+    function validate_floor($floor) {
+        if (array_key_exists('aisles', $floor)) {
+            // Parse all aisles
+            foreach ($floor['aisles'] as $aisle) {
+                validate_aisle($aisle);
+            }
+        }
+
+        if (array_key_exists('aisle_areas', $floor)) {
+            // Parse all aisle areas
+            foreach ($floor['aisle_areas'] as $aisle_area) {
+                validate_aisle_area($aisle_area);
+            }
+        }
+
+        if (array_key_exists('landmarks', $floor)) {
+            // Parse all landmarks
+            foreach ($floor['landmarks'] as $landmark) {
+                validate_landmark($landmark);
+            }
+        }
+
+        if (array_key_exists('walls', $floor)) {
+            // Parse all walls
+            foreach ($floor['walls'] as $wall) {
+                validate_wall($wall);
+            }
+        }
+
+        if (!array_key_exists('floor_id', $floor) || !is_int($floor['floor_id'])) {
+            error('validate_floor: incorrect or missing floor_id from floor object.');
+        }
+
+        if (!array_key_exists('floor_order', $floor) || !is_numeric($floor['floor_order'])) {
+            error('validate_floor: incorrect or missing floor_order from floor object.');
+        }
+    }
+
+    /**
+     Validates call number range according to the specified JSON format. Throws
+     an exception if the call numbers within the range are not in the right 
+     format.
+
+     Arguments:
+     $call_range: The call number range that requires validation.
+
+     Return value:
+     Nothing if valid, exception otherwise.
+     */
+    function validate_call_range($call_range) {
+        // First check if all keys exist, then check if the resulting call
+        // numbers are valid.
+        if (array_key_exists('call_start', $call_range) && 
+            is_string($call_range['call_start']) &&
+            array_key_exists('call_end', $call_range) && 
+            is_string($call_range['call_end']) &&
+            !(array_key_exists('collection', $call_range) && 
+                !is_string($call_range['collection'])) &&
+            !(array_key_exists('side', $call_range) && 
+                !is_string($call_range['side']) && 
+                !is_numeric($call_range['side']))) {
+            // We parse the numbers through convert_call_number. An error will
+            // be thrown if there are any errors.
+            $c1 = convert_call_number($call_range['call_start']);
+            $c2 = convert_call_number($call_range['call_start']);
+
+            if (compare_call_numbers($c1, $c2) >= 0) {
+                error('validate_call_range: call_start is bigger than call_end.');
+            }
+        } else {
+            error('validate_call_range: incorrect or missing keys from call_range object.');            
+        }
+    }
+
+
+    /**
+     Validates aisle according to the specified JSON format. May report an error 
+     if any call number within the ranges is not in the right format.
+
+     Arguments:
+     $aisle:    The aisle that requires validation.
+
+     Return value:
+     TRUE if valid, FALSE or exception otherwise.
+     */
+    function validate_aisle($aisle) {
+        // First check if all keys exist, then check if the resulting call
+        // numbers are valid.
+        if (validate_rect($aisle) &&
+            array_key_exists('is_double_sided', $aisle) && 
+            is_bool($aisle['is_double_sided'])) {
+
+            if (array_key_exists('call_ranges', $aisle)) {
+                foreach ($aisle['call_ranges'] as $call_range) {
+                    validate_call_range($call_range);
+                }
+            }
+        } else {
+            error('validate_aisle: incorrect or missing keys from aisle object.');
+        }
+    }
+
+
+    /**
+     Validates aisle area according to the specified JSON format. May report an
+     error if any call number within the ranges within the aisles is not in the 
+     right format.
+
+     Arguments:
+     $aisle_area:   The aisle area that requires validation.
+
+     Return value:
+     TRUE if valid, FALSE or exception otherwise.
+     */
+    function validate_aisle_area($aisle_area) {
+        // First check if all keys exist, then check if the resulting call
+        // numbers are valid.
+        if (validate_rect($aisle_area)) {
+            $is_valid = TRUE;
+
+            if (array_key_exists('aisles', $aisle_area)) {
+                foreach ($aisle_area['aisles'] as $aisle) {
+                    validate_aisle($aisle);
+                }
+            }
+        } else {
+            error('validate_aisle_area: incorrect or missing keys from aisle_area object.');
+        }
+    }
+
+
+    /**
+     Validates landmark according to the specified JSON format.
+
+     Arguments:
+     $landmark: The landmark that requires validation.
+
+     Return value:
+     TRUE if valid, FALSE otherwise.
+     */
+    function validate_landmark($landmark) {
+        validate_rect($landmark);
+
+        if (!array_key_exists('landmark_type', $landmark) || 
+            !is_string($landmark['landmark_type'])) {
+            error('validate_landmark: incorrect or missing keys from landmark object.');
+        }
+    }
+
+
+    /**
+     Validates a wall according to the specified JSON format.
+
+     Arguments:
+     $wall: The wall object that requires validation.
+
+     Return value:
+     TRUE if valid, FALSE otherwise.
+     */
+    function validate_wall($wall) {
+        if (!(array_key_exists('start_x', $wall) && 
+            is_numeric($wall['start_x']) && 
+            array_key_exists('start_y', $wall) && 
+            is_numeric($wall['start_y']) &&
+            array_key_exists('end_x', $wall) && 
+            is_numeric($wall['end_x']) &&
+            array_key_exists('end_y', $wall) &&
+            is_numeric($wall['end_y']))) {
+            error('validate_wall: incorrect or missing keys from wall object.');
+        }
+    }
+
+
+    /**
+     Validates rectangle (which underlies all of our geometry apart from walls)
+     according to the specified JSON format. This checks whether the given
+     object has 'center_x', 'center_y', 'width', 'height' and 'rotation' keys
+     with appropriate types.
+
+     Arguments:
+     $rect: The object that requires validation.
+
+     Return value:
+     TRUE if valid, FALSE otherwise.
+     */
+    function validate_rect($rect) {
+        if (!(array_key_exists('center_x', $rect) && 
+            is_numeric($rect['center_x']) && 
+            array_key_exists('center_y', $rect) && 
+            is_numeric($rect['center_y']) &&
+            array_key_exists('width', $rect) && 
+            is_numeric($rect['width']) &&
+            array_key_exists('height', $rect) &&
+            is_numeric($rect['height']) &&
+            array_key_exists('rotation', $rect) &&
+            is_numeric($rect['rotation']))) {
+            error('validate_rect: incorrect or missing keys from rect object.');
+        }
+    }
+
+
+    /**
      Converts a normal, non-spaced library of congress call number to a spaced
      version. If the call number is invalid, this tries to construct a call
      number from parts that are valid. However, it expects at least the class to
@@ -760,7 +1016,7 @@
 
         // Find class
         $terminated = FALSE;
-        $result = preg_match('^[A-Z]+', $call_number, $matches);
+        $result = preg_match('(^[A-Z]+)', $call_number, $matches);
 
         if ($result === FALSE) {
             error('covert_call_number: Regular expression matching failed.');
@@ -771,7 +1027,7 @@
         $class = $matches[0];
 
         // Find subclass
-        $result = preg_match('[0-9]*\.?[0-9]+', $call_number, $matches);
+        $result = preg_match('([0-9]*\.?[0-9]+)', $call_number, $matches);
 
         if ($result === FALSE) {
             error('covert_call_number: Regular expression matching failed.');
@@ -783,7 +1039,7 @@
         $subclass = $matches[0];
 
         // Cutters
-        $result = preg_match_all('\.[a-zA-Z]+[0-9]+', $call_number, $matches);
+        $result = preg_match_all('(\.[a-zA-Z]+[0-9]+)', $call_number, $matches);
 
         if ($result === FALSE) {
             error('covert_call_number: Regular expression matching failed.');
@@ -820,7 +1076,7 @@
      float of the numbers.
      */
     function split_cutter_number($cutter) {
-        $result = preg_match('[a-zA-Z]+', $cutter, $matches);
+        $result = preg_match('([a-zA-Z]+)', $cutter, $matches);
 
         if ($result === FALSE) {
             error('split_cutter_number: Regular expression matching failed.');
@@ -830,7 +1086,7 @@
 
         $splitted[0] = $matches[0];
 
-        $result = preg_match('[0-9]+', $cutter, $matches);
+        $result = preg_match('([0-9]+)', $cutter, $matches);
 
         if ($result === FALSE) {
             error('split_cutter_number: Regular expression matching failed.');
@@ -864,8 +1120,8 @@
      */
     function compare_call_numbers($c1, $c2) {
         // First check if the two numbers are valid.
-        $cmp1 = preg_split(' ', convert_call_number($c1));
-        $cmp2 = preg_split(' ', convert_call_number($c2));
+        $cmp1 = preg_split('( )', convert_call_number($c1));
+        $cmp2 = preg_split('( )', convert_call_number($c2));
 
         // Compare class first. We are guaranteed to have at least the class by
         // the convert_call_number() function.
