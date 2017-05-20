@@ -103,7 +103,7 @@ application/x-httpd-php api.php ( PHP script text )
         $con->close();
 
         // Send response.
-        $response['success'] = $success;
+        $response['success'] = TRUE;
         $response['token'] = $token;
 
         echo json_encode($response);
