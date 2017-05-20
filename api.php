@@ -7,8 +7,7 @@
     $DB_PORT = "3306";
     $DB_USER = "zhenfwwh_stack-map-admin";
     $DB_PASSWORD = "stack-map-admin";
-    $DB_NAME = "zhenfwwh_stack-map";
-
+    $DB_NAME = "zhenfwwh_stack_maps";
     // How long the user can be idle before access is revoked, in seconds.
     $TOKEN_VALID_DURATION = 86400;
 
@@ -275,7 +274,7 @@
         $sql = 'SELECT floor_id FROM floor WHERE library = ?';
         $library['floors'] = get_data($con, $sql, 'i', $library_id);
 
-        for ($i = 0; $i < count($library['floors']; $i++)) {
+        for ($i = 0; $i < count($library['floors']); $i++) {
             $fid = $library['floors'][$i]['floor_id'];
             $library['floors'][$i] = get_floor($con, $fid);
         }
@@ -345,8 +344,8 @@
 
         // Verify the library is valid.
         $con = connect();
-        $sql = 'SELECT * FROM library WHERE library_id = ?';
-        $result = get_data($con, $sql, 'i', $library_id);
+        $sql = 'SELECT * FROM library WHERE library_name = ?';
+        $result = get_data($con, $sql, 's', $library_name);
 
         if (count($result) != 1) {
             error('get_book_location: Given library is not found.');
@@ -358,8 +357,8 @@
         $sql = 'SELECT *
                   FROM call_range
                   JOIN aisle ON call_range.aisle = aisle.aisle_id
-                 WHERE collection = ?
-                   AND aisle IN 
+                 WHERE collection = ? AND
+                       aisle IN 
                        (SELECT aisle_id 
                           FROM aisle 
                          WHERE floor IN 
@@ -369,10 +368,6 @@
                                )
                        )';
         $call_ranges = get_data($con, $sql, 'si', $collection, $library['library_id']);
-
-        if (count($call_ranges) === 0) {
-          error("get_book_location: The book is not found in this library.");
-        }
 
         $aisles = array();
         $floor_ids = array();
@@ -401,6 +396,10 @@
                 // Add aisle element to array.
                 array_push($aisles, $aisle_element);
             }
+        }
+
+        if (count($aisles) == 0) {
+            error("get_book_location: The book is not found in this library.");
         }
 
         // Now fetch each floor.
@@ -1236,7 +1235,7 @@
         $floor['walls'] = get_data($con, $sql, 'i', $fid);
 
         // Fetch all aisles not belonging to an aisle area
-        $sql = 'SELECT * FROM aisle WHERE floor = ? AND aisle_area = NULL';
+        $sql = 'SELECT * FROM aisle WHERE floor = ? AND aisle_area IS NULL';
         $floor['aisles'] = get_data($con, $sql, 'i', $fid);
 
         // Fetch all aisles areas
@@ -1319,8 +1318,8 @@
         $con = new mysqli($DB_HOST, $DB_USER, $DB_PASSWORD, $DB_NAME, $DB_PORT);
 
         // Check connection
-        if ($mysqli->connect_errno) {
-            error('Database failure: ' . $mysqli->connect_error);
+        if ($con->connect_errno) {
+            error('Database failure: ' . $con->connect_error);
         } else {
             return $con;
         }
@@ -1346,17 +1345,25 @@
      exception otherwise.
      */
     function get_data($con, $request, $arg_types, ...$args) {
-        if ($statement = $con->prepare($request)) {
+        if (!($statement = $con->prepare($request))) {
             error("Error preparing statement \"$request\": $con->error");
         }
 
         // Bind arguments
-        $types = str_split($arg_types);
+        $a_params = array();
+ 
+        $arg_types;
+ 
+        /* with call_user_func_array, array params must be passed by reference */
+        $a_params[] = & $arg_types;
+ 
+        for ($i = 0; $i < strlen($arg_types); $i++) {
+              /* with call_user_func_array, array params must be passed by reference */
+            $a_params[] = & $args[$i];
+        }
 
-        for ($i = 0; $i < count($types); $i++) {
-            if (!$statement->bind_param($types[$i], $args[$i])) {
-                error("Error preparing statement \"$request\": failed binding argument at index $i.");
-            }
+        if (!call_user_func_array(array($statement, 'bind_param'), $a_params)) {
+            error("Error preparing statement \"$request\".");
         }
 
         // Execute
@@ -1365,15 +1372,13 @@
         }
 
         // Fetch result
-        if (!($result = $statement->get_result())) {
-            error("Error getting result from statement \"$request\": $statement->error");
-        }
+        $result = get_result($statement);
 
         // We don't need to close the statement explicitly because php does that
         // for us automatically when it goes out of scope.
 
         // Return result
-        return $result->fetch_all(MYSQLI_ASSOC);
+        return $result;
     }
 
     /**
@@ -1408,5 +1413,34 @@
         if (!$statement->execute()) {
             error("Error executing statement \"$request\": $statement->error");
         }
+    }
+
+    /**
+     This function replaces the need for mysqlnd plugin for php. It parses a
+     statement and returns the result of the query in an associative array.
+
+     Argument:
+     $statement:    a prepared, binded, executed MySQL prepared statement.
+
+     Returns:
+     A numerical array of rows in associate array format.
+     */
+    function get_result($statement) {
+        $result = array();
+        $statement->store_result();
+
+        for ($i = 0; $i < $statement->num_rows; $i++) {
+            $metadata = $statement->result_metadata();
+            $params = array();
+
+            while ($field = $metadata->fetch_field()) {
+                $params[] = &$result[$i][$field->name];
+            }
+
+            call_user_func_array(array($statement, 'bind_result'), $params);
+            $statement->fetch();
+        }
+
+        return $result;
     }
 ?>
