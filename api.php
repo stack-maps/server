@@ -1,3 +1,6 @@
+
+application/x-httpd-php api.php ( PHP script text )
+
 <?php
     /*
      These information are used to connect to the database that manages the
@@ -353,11 +356,11 @@
 
         $library = $result[0];
 
-        // Fetch all call number ranges in this library.
+        // Fetch all call number ranges in this library. collection = ? AND
         $sql = 'SELECT *
                   FROM call_range
                   JOIN aisle ON call_range.aisle = aisle.aisle_id
-                 WHERE collection = ? AND
+                 WHERE 
                        aisle IN 
                        (SELECT aisle_id 
                           FROM aisle 
@@ -367,7 +370,7 @@
                                  WHERE library = ?
                                )
                        )';
-        $call_ranges = get_data($con, $sql, 'si', $collection, $library['library_id']);
+        $call_ranges = get_data($con, $sql, 'i', $library['library_id']);
 
         $aisles = array();
         $floor_ids = array();
@@ -390,11 +393,11 @@
                 $fid = $call_range['floor'];
 
                 if (!in_array($fid, $floor_ids)) {
-                    array_push($floor_ids, $fid);
+                    $floor_ids[] = $fid;
                 }
 
                 // Add aisle element to array.
-                array_push($aisles, $aisle_element);
+                $aisles[] = $aisle_element;
             }
         }
 
@@ -406,7 +409,7 @@
         $floors = array();
 
         foreach ($floor_ids as $fid) {
-            array_push($floors, get_floor($con, $fid));
+            $floors[] = get_floor($con, $fid);
         }
 
         // Close database.
@@ -1350,20 +1353,15 @@
         }
 
         // Bind arguments
-        $a_params = array();
- 
-        $arg_types;
- 
-        /* with call_user_func_array, array params must be passed by reference */
-        $a_params[] = & $arg_types;
+        $bind_args = array();
+        $bind_args[] = &$arg_types;
  
         for ($i = 0; $i < strlen($arg_types); $i++) {
-              /* with call_user_func_array, array params must be passed by reference */
-            $a_params[] = & $args[$i];
+            $bind_args[] = &$args[$i];
         }
 
-        if (!call_user_func_array(array($statement, 'bind_param'), $a_params)) {
-            error("Error preparing statement \"$request\".");
+        if (!call_user_func_array(array($statement, 'bind_param'), $bind_args)) {
+            error("Error binding statement \"$request\".");
         }
 
         // Execute
@@ -1401,12 +1399,15 @@
         }
 
         // Bind arguments
-        $types = str_split($arg_types);
+        $bind_args = array();
+        $bind_args[] = &$arg_types;
 
-        for ($i = 0; $i < count($types); $i++) {
-            if (!$statement->bind_param($types[$i], $args[$i])) {
-                error("Error preparing statement \"$request\": failed binding argument at index $i.");
-            }
+        for ($i = 0; $i < strlen($arg_types); $i++) {
+            $bind_args[] = &$args;
+        }
+
+        if (!call_user_func_array(array($statement, 'bind_param'), $bind_args)) {
+            error("Error binding statement \"$request\".");
         }
 
         // Execute
