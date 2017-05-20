@@ -18,30 +18,16 @@
     }
 
     // Switching to a particular request.
-    if ($_POST['request'] === 'login') {
-        login();
-    } else if ($_POST['request'] === 'create_library') {
-        create_library();
-    } else if ($_POST['request'] === 'create_floor') {
-        create_floor();
-    } else if ($_POST['request'] === 'get_library_list') {
-        get_library_list();
-    } else if ($_POST['request'] === 'get_library') {
-        get_library();
-    } else if ($_POST['request'] === 'get_book_location') {
-        get_book_location();
-    } else if ($_POST['request'] === 'update_library') {
-        update_library();
-    } else if ($_POST['request'] === 'update_floor') {
-        update_floor();
-    } else if ($_POST['request'] === 'update_floor_meta') {
-        update_floor_meta();
-    } else if ($_POST['request'] === 'delete_library') {
-        delete_library();
-    } else if ($_POST['request'] === 'delete_floor') {
-        delete_floor();
+    $endpoints = array('login', 'create_library', 'create_floor',
+      'get_library_list', 'get_library', 'get_book_location', 'update_library',
+      'update_floor', 'update_floor_meta', 'delete_library', 'delete_floor');
+
+    $endpoint = $_POST['request'];
+
+    if (function_exists($endpoint) && in_array($endpoint, $endpoints, true)) {
+      $endpoint();
     } else {
-        error("Invalid request.");
+      error("Invalid request.");
     }
 
 
