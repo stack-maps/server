@@ -119,7 +119,7 @@ CREATE TABLE token (
     expire_date     DATETIME
 );
 
-CREATE TABLE users (
+CREATE TABLE user (
     PRIMARY KEY (user_id),
     user_id         INT         NOT NULL    AUTO_INCREMENT,
     username CHAR(25),
