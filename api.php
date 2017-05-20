@@ -1341,7 +1341,8 @@ application/x-httpd-php api.php ( PHP script text )
      $arg_types:    a string defining argument types to follow. 's' is string,
                     'i' is integer, 'd' is double. E.g. 'ssid' will signify that
                     there are 4 arguments to bind to the prepared statement with
-                    types string, string, integer and double.
+                    types string, string, integer and double. Pass in empty
+                    string to indicate nothing needs to be binded.
      $args:         The actual arguments, passed in to this in variable length
                     argument function style.
 
@@ -1355,15 +1356,19 @@ application/x-httpd-php api.php ( PHP script text )
         }
 
         // Bind arguments
-        $bind_args = array();
-        $bind_args[] = &$arg_types;
- 
-        for ($i = 0; $i < strlen($arg_types); $i++) {
-            $bind_args[] = &$args[$i];
-        }
+        $arg_count = strlen($arg_types);
 
-        if (!call_user_func_array(array($statement, 'bind_param'), $bind_args)) {
-            error("Error binding statement \"$request\".");
+        if ($arg_count > 0) {
+            $bind_args = array();
+            $bind_args[] = &$arg_types;
+ 
+            for ($i = 0; $i < $arg_count; $i++) {
+                $bind_args[] = &$args[$i];
+            }
+
+            if (!call_user_func_array(array($statement, 'bind_param'), $bind_args)) {
+                error("Error binding statement \"$request\".");
+            }
         }
 
         // Execute
@@ -1391,7 +1396,8 @@ application/x-httpd-php api.php ( PHP script text )
      $arg_types:    a string defining argument types to follow. 's' is string,
                     'i' is integer, 'd' is double. E.g. 'ssid' will signify that
                     there are 4 arguments to bind to the prepared statement with
-                    types string, string, integer and double.
+                    types string, string, integer and double. Pass in empty
+                    string to indicate nothing needs to be binded.
      $args:         The actual arguments, passed in to this in variable length
                     argument function style.
      */
@@ -1401,16 +1407,20 @@ application/x-httpd-php api.php ( PHP script text )
         }
 
         // Bind arguments
-        $bind_args = array();
-        $bind_args[] = &$arg_types;
+        $arg_count = strlen($arg_types);
 
-        for ($i = 0; $i < strlen($arg_types); $i++) {
-            $bind_args[] = &$args;
-        }
+        if ($arg_count > 0) {
+            $bind_args = array();
+            $bind_args[] = &$arg_types;
+ 
+            for ($i = 0; $i < $arg_count; $i++) {
+                $bind_args[] = &$args[$i];
+            }
 
-        if (!call_user_func_array(array($statement, 'bind_param'), $bind_args)) {
-            error("Error binding statement \"$request\".");
-        }
+            if (!call_user_func_array(array($statement, 'bind_param'), $bind_args)) {
+                error("Error binding statement \"$request\".");
+            }
+        } 
 
         // Execute
         if (!$statement->execute()) {
