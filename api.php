@@ -1,3 +1,6 @@
+
+application/x-httpd-php api.php ( PHP script text )
+
 <?php
     /*
      These information are used to connect to the database that manages the
@@ -7,8 +10,7 @@
     $DB_PORT = "3306";
     $DB_USER = "zhenfwwh_stack-map-admin";
     $DB_PASSWORD = "stack-map-admin";
-    $DB_NAME = "zhenfwwh_stack-map";
-
+    $DB_NAME = "zhenfwwh_stack_maps";
     // How long the user can be idle before access is revoked, in seconds.
     $TOKEN_VALID_DURATION = 86400;
 
@@ -49,6 +51,8 @@
                     quick credential checks for subsequent db modifications. 
      */
     function login() {
+        global $TOKEN_VALID_DURATION;
+
         // Parse parameters.
         $username = $_POST['username'];
         $password = $_POST['password'];
@@ -77,7 +81,7 @@
         }
 
         // Store this token to the database along with a validity duration.
-        $expire_date = time() + TOKEN_VALID_DURATION;
+        $expire_date = time() + $TOKEN_VALID_DURATION;
         $sql = 'INSERT INTO token (token_body, expire_date) VALUES (?, ?)';
         run_query($con, $sql, 'si', $token, $expire_date);
 
@@ -85,7 +89,7 @@
         $con->close();
 
         // Send response.
-        $response['success'] = $success;
+        $response['success'] = TRUE;
         $response['token'] = $token;
 
         echo json_encode($response);
@@ -261,7 +265,7 @@
         $sql = 'SELECT floor_id FROM floor WHERE library = ?';
         $library['floors'] = get_data($con, $sql, 'i', $library_id);
 
-        for ($i = 0; $i < count($library['floors']; $i++)) {
+        for ($i = 0; $i < count($library['floors']); $i++) {
             $fid = $library['floors'][$i]['floor_id'];
             $library['floors'][$i] = get_floor($con, $fid);
         }
@@ -316,7 +320,7 @@
                         book is on the right. Left and right are relative to the 
                         local space of the stack (where we disregard its 
                         rotation). At 0 rotation, a double sided aisle should 
-                        have short width and long height, with two rectangles: 
+                        have short `width` and long height, with two rectangles: 
                         one on the left and the other on the right.
      */
     function get_book_location() {
@@ -331,8 +335,8 @@
 
         // Verify the library is valid.
         $con = connect();
-        $sql = 'SELECT * FROM library WHERE library_id = ?';
-        $result = get_data($con, $sql, 'i', $library_id);
+        $sql = 'SELECT * FROM library WHERE library_name = ?';
+        $result = get_data($con, $sql, 's', $library_name);
 
         if (count($result) != 1) {
             error('get_book_location: Given library is not found.');
@@ -340,12 +344,12 @@
 
         $library = $result[0];
 
-        // Fetch all call number ranges in this library.
+        // Fetch all call number ranges in this library. collection = ? AND
         $sql = 'SELECT *
                   FROM call_range
                   JOIN aisle ON call_range.aisle = aisle.aisle_id
-                 WHERE collection = ?
-                   AND aisle IN 
+                 WHERE 
+                       aisle IN 
                        (SELECT aisle_id 
                           FROM aisle 
                          WHERE floor IN 
@@ -354,11 +358,7 @@
                                  WHERE library = ?
                                )
                        )';
-        $call_ranges = get_data($con, $sql, 'si', $collection, $library['library_id']);
-
-        if (count($call_ranges) === 0) {
-          error("get_book_location: The book is not found in this library.");
-        }
+        $call_ranges = get_data($con, $sql, 'i', $library['library_id']);
 
         $aisles = array();
         $floor_ids = array();
@@ -381,19 +381,23 @@
                 $fid = $call_range['floor'];
 
                 if (!in_array($fid, $floor_ids)) {
-                    array_push($floor_ids, $fid);
+                    $floor_ids[] = $fid;
                 }
 
                 // Add aisle element to array.
-                array_push($aisles, $aisle_element);
+                $aisles[] = $aisle_element;
             }
+        }
+
+        if (count($aisles) == 0) {
+            error("get_book_location: The book is not found in this library.");
         }
 
         // Now fetch each floor.
         $floors = array();
 
         foreach ($floor_ids as $fid) {
-            array_push($floors, get_floor($con, $fid));
+            $floors[] = get_floor($con, $fid);
         }
 
         // Close database.
@@ -833,10 +837,10 @@
             // We parse the numbers through convert_call_number. An error will
             // be thrown if there are any errors.
             $c1 = convert_call_number($call_range['call_start']);
-            $c2 = convert_call_number($call_range['call_start']);
+            $c2 = convert_call_number($call_range['call_end']);
 
             if (compare_call_numbers($c1, $c2) >= 0) {
-                error('validate_call_range: call_start is bigger than call_end.');
+                error("validate_call_range: call_start ($c1) is bigger or equal to call_end ($c2).");
             }
         } else {
             error('validate_call_range: incorrect or missing keys from call_range object.');            
@@ -857,8 +861,9 @@
     function validate_aisle($aisle) {
         // First check if all keys exist, then check if the resulting call
         // numbers are valid.
-        if (validate_rect($aisle) &&
-            array_key_exists('is_double_sided', $aisle) && 
+        validate_rect($aisle);
+
+        if (array_key_exists('is_double_sided', $aisle) && 
             is_bool($aisle['is_double_sided'])) {
 
             if (array_key_exists('call_ranges', $aisle)) {
@@ -886,16 +891,12 @@
     function validate_aisle_area($aisle_area) {
         // First check if all keys exist, then check if the resulting call
         // numbers are valid.
-        if (validate_rect($aisle_area)) {
-            $is_valid = TRUE;
+        validate_rect($aisle_area);
 
-            if (array_key_exists('aisles', $aisle_area)) {
-                foreach ($aisle_area['aisles'] as $aisle) {
-                    validate_aisle($aisle);
-                }
+        if (array_key_exists('aisles', $aisle_area)) {
+            foreach ($aisle_area['aisles'] as $aisle) {
+                validate_aisle($aisle);                
             }
-        } else {
-            error('validate_aisle_area: incorrect or missing keys from aisle_area object.');
         }
     }
 
@@ -1005,9 +1006,9 @@
         $result = preg_match('(^[A-Z]+)', $call_number, $matches);
 
         if ($result === FALSE) {
-            error('covert_call_number: Regular expression matching failed.');
+            error('convert_call_number: Regular expression matching failed.');
         } else if ($result === 0) {
-            error('covert_call_number: Call number format error. Expected class.');
+            error('convert_call_number: Call number format error. Expected class.');
         }
 
         $class = $matches[0];
@@ -1016,7 +1017,7 @@
         $result = preg_match('([0-9]*\.?[0-9]+)', $call_number, $matches);
 
         if ($result === FALSE) {
-            error('covert_call_number: Regular expression matching failed.');
+            error('convert_call_number: Regular expression matching failed.');
         } else if ($result === 0) {
             // We should have no more parts.
             return $class;
@@ -1028,7 +1029,7 @@
         $result = preg_match_all('(\.[a-zA-Z]+[0-9]+)', $call_number, $matches);
 
         if ($result === FALSE) {
-            error('covert_call_number: Regular expression matching failed.');
+            error('convert_call_number: Regular expression matching failed.');
         }
 
         $cutter1 = '';
@@ -1222,8 +1223,15 @@
         $floor['walls'] = get_data($con, $sql, 'i', $fid);
 
         // Fetch all aisles not belonging to an aisle area
-        $sql = 'SELECT * FROM aisle WHERE floor = ? AND aisle_area = NULL';
+        $sql = 'SELECT * FROM aisle WHERE floor = ? AND aisle_area IS NULL';
         $floor['aisles'] = get_data($con, $sql, 'i', $fid);
+
+        foreach ($floor['aisles'] as &$aisle) {
+            $sql = 'SELECT * FROM call_range WHERE aisle = ?';
+            $aisle['call_ranges'] = get_data($con, $sql, 'i', $aisle['aisle_id']);
+        }
+
+        unset($aisle);
 
         // Fetch all aisles areas
         $sql = 'SELECT * FROM aisle_area WHERE floor = ?';
@@ -1236,6 +1244,13 @@
             // Fetch all aisles belonging to that aisle area
             $sql = 'SELECT * FROM aisle WHERE floor = ? AND aisle_area = ?';
             $aisle_area['aisles'] = get_data($con, $sql, 'ii', $fid, $aid);
+
+            foreach ($aisle_area['aisles'] as &$aisle) {
+                $sql = 'SELECT * FROM call_range WHERE aisle = ?';
+                $aisle['call_ranges'] = get_data($con, $sql, 'i', $aisle['aisle_id']);
+            }
+
+            unset($aisle);
         }
 
         return $floor;
@@ -1264,7 +1279,7 @@
             error("Invalid token.");
         }
 
-        $time = $result[0]->expire_date;
+        $time = $result[0]['expire_date'];
         $curr_time = time();
 
         // Check token validity.
@@ -1272,9 +1287,9 @@
             error("Token expired. Please login again.");
         } else {
             // If valid, refresh token duration.
-            $sql = "UPDATE token SET expire_date = ? WHERE token_id = ?";
-            $updated_time = $curr_time + TOKEN_VALID_DURATION;
-            run_query($con, $sql, "ii", $updated_time, $result[0]->token_id);
+            $sql = 'UPDATE token SET expire_date = ? WHERE token_id = ?';
+            $updated_time = $curr_time + $TOKEN_VALID_DURATION;
+            run_query($con, $sql, "ii", $updated_time, $result[0]['token_id']);
         }
     }
 
@@ -1305,8 +1320,8 @@
         $con = new mysqli($DB_HOST, $DB_USER, $DB_PASSWORD, $DB_NAME, $DB_PORT);
 
         // Check connection
-        if ($mysqli->connect_errno) {
-            error('Database failure: ' . $mysqli->connect_error);
+        if ($con->connect_errno) {
+            error('Database failure: ' . $con->connect_error);
         } else {
             return $con;
         }
@@ -1323,7 +1338,8 @@
      $arg_types:    a string defining argument types to follow. 's' is string,
                     'i' is integer, 'd' is double. E.g. 'ssid' will signify that
                     there are 4 arguments to bind to the prepared statement with
-                    types string, string, integer and double.
+                    types string, string, integer and double. Pass in empty
+                    string to indicate nothing needs to be binded.
      $args:         The actual arguments, passed in to this in variable length
                     argument function style.
 
@@ -1332,16 +1348,23 @@
      exception otherwise.
      */
     function get_data($con, $request, $arg_types, ...$args) {
-        if ($statement = $con->prepare($request)) {
+        if (!($statement = $con->prepare($request))) {
             error("Error preparing statement \"$request\": $con->error");
         }
 
         // Bind arguments
-        $types = str_split($arg_types);
+        $arg_count = strlen($arg_types);
 
-        for ($i = 0; $i < count($types); $i++) {
-            if (!$statement->bind_param($types[$i], $args[$i])) {
-                error("Error preparing statement \"$request\": failed binding argument at index $i.");
+        if ($arg_count > 0) {
+            $bind_args = array();
+            $bind_args[] = &$arg_types;
+ 
+            for ($i = 0; $i < $arg_count; $i++) {
+                $bind_args[] = &$args[$i];
+            }
+
+            if (!call_user_func_array(array($statement, 'bind_param'), $bind_args)) {
+                error("Error binding statement \"$request\".");
             }
         }
 
@@ -1351,15 +1374,13 @@
         }
 
         // Fetch result
-        if (!($result = $statement->get_result())) {
-            error("Error getting result from statement \"$request\": $statement->error");
-        }
+        $result = get_result($statement);
 
         // We don't need to close the statement explicitly because php does that
         // for us automatically when it goes out of scope.
 
         // Return result
-        return $result->fetch_all(MYSQLI_ASSOC);
+        return $result;
     }
 
     /**
@@ -1372,27 +1393,64 @@
      $arg_types:    a string defining argument types to follow. 's' is string,
                     'i' is integer, 'd' is double. E.g. 'ssid' will signify that
                     there are 4 arguments to bind to the prepared statement with
-                    types string, string, integer and double.
+                    types string, string, integer and double. Pass in empty
+                    string to indicate nothing needs to be binded.
      $args:         The actual arguments, passed in to this in variable length
                     argument function style.
      */
     function run_query($con, $request, $arg_types, ...$args) {
-        if ($statement = $con->prepare($request)) {
+        if (!($statement = $con->prepare($request))) {
             error("Error preparing statement \"$request\": $con->error");
         }
 
         // Bind arguments
-        $types = str_split($arg_types);
+        $arg_count = strlen($arg_types);
 
-        for ($i = 0; $i < count($types); $i++) {
-            if (!$statement->bind_param($types[$i], $args[$i])) {
-                error("Error preparing statement \"$request\": failed binding argument at index $i.");
+        if ($arg_count > 0) {
+            $bind_args = array();
+            $bind_args[] = &$arg_types;
+ 
+            for ($i = 0; $i < $arg_count; $i++) {
+                $bind_args[] = &$args[$i];
             }
-        }
+
+            if (!call_user_func_array(array($statement, 'bind_param'), $bind_args)) {
+                error("Error binding statement \"$request\".");
+            }
+        } 
 
         // Execute
         if (!$statement->execute()) {
             error("Error executing statement \"$request\": $statement->error");
         }
+    }
+
+    /**
+     This function replaces the need for mysqlnd plugin for php. It parses a
+     statement and returns the result of the query in an associative array.
+
+     Argument:
+     $statement:    a prepared, binded, executed MySQL prepared statement.
+
+     Returns:
+     A numerical array of rows in associate array format.
+     */
+    function get_result($statement) {
+        $result = array();
+        $statement->store_result();
+
+        for ($i = 0; $i < $statement->num_rows; $i++) {
+            $metadata = $statement->result_metadata();
+            $params = array();
+
+            while ($field = $metadata->fetch_field()) {
+                $params[] = &$result[$i][$field->name];
+            }
+
+            call_user_func_array(array($statement, 'bind_result'), $params);
+            $statement->fetch();
+        }
+
+        return $result;
     }
 ?>

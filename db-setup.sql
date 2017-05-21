@@ -73,7 +73,7 @@ CREATE TABLE aisle (
     width           FLOAT       NOT NULL    DEFAULT 0,
     height          FLOAT       NOT NULL    DEFAULT 0,
     rotation        FLOAT       NOT NULL    DEFAULT 0,
-    is_double_sided INT(1)      NOT NULL,
+    is_double_sided INT(1)      NOT NULL    DEFAULT 1,
     aisle_area      INT,
                     INDEX (aisle_area),
                     FOREIGN KEY (aisle_area) REFERENCES aisle_area(aisle_area_id)
@@ -116,10 +116,10 @@ CREATE TABLE token (
     PRIMARY KEY (token_id),
     token_id        INT         NOT NULL    AUTO_INCREMENT,
     token_body      CHAR(64),
-    expire_date     DATETIME
+    expire_date     BIGINT
 );
 
-CREATE TABLE users (
+CREATE TABLE user (
     PRIMARY KEY (user_id),
     user_id         INT         NOT NULL    AUTO_INCREMENT,
     username CHAR(25),
