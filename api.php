@@ -334,7 +334,7 @@ application/x-httpd-php api.php ( PHP script text )
                         book is on the right. Left and right are relative to the 
                         local space of the stack (where we disregard its 
                         rotation). At 0 rotation, a double sided aisle should 
-                        have short width and long height, with two rectangles: 
+                        have short `width` and long height, with two rectangles: 
                         one on the left and the other on the right.
      */
     function get_book_location() {
@@ -851,10 +851,10 @@ application/x-httpd-php api.php ( PHP script text )
             // We parse the numbers through convert_call_number. An error will
             // be thrown if there are any errors.
             $c1 = convert_call_number($call_range['call_start']);
-            $c2 = convert_call_number($call_range['call_start']);
+            $c2 = convert_call_number($call_range['call_end']);
 
             if (compare_call_numbers($c1, $c2) >= 0) {
-                error('validate_call_range: call_start is bigger than call_end.');
+                error("validate_call_range: call_start ($c1) is bigger or equal to call_end ($c2).");
             }
         } else {
             error('validate_call_range: incorrect or missing keys from call_range object.');            
@@ -875,8 +875,9 @@ application/x-httpd-php api.php ( PHP script text )
     function validate_aisle($aisle) {
         // First check if all keys exist, then check if the resulting call
         // numbers are valid.
-        if (validate_rect($aisle) &&
-            array_key_exists('is_double_sided', $aisle) && 
+        validate_rect($aisle);
+
+        if (array_key_exists('is_double_sided', $aisle) && 
             is_bool($aisle['is_double_sided'])) {
 
             if (array_key_exists('call_ranges', $aisle)) {
@@ -904,16 +905,12 @@ application/x-httpd-php api.php ( PHP script text )
     function validate_aisle_area($aisle_area) {
         // First check if all keys exist, then check if the resulting call
         // numbers are valid.
-        if (validate_rect($aisle_area)) {
-            $is_valid = TRUE;
+        validate_rect($aisle_area);
 
-            if (array_key_exists('aisles', $aisle_area)) {
-                foreach ($aisle_area['aisles'] as $aisle) {
-                    validate_aisle($aisle);
-                }
+        if (array_key_exists('aisles', $aisle_area)) {
+            foreach ($aisle_area['aisles'] as $aisle) {
+                validate_aisle($aisle);                
             }
-        } else {
-            error('validate_aisle_area: incorrect or missing keys from aisle_area object.');
         }
     }
 
@@ -1023,9 +1020,9 @@ application/x-httpd-php api.php ( PHP script text )
         $result = preg_match('(^[A-Z]+)', $call_number, $matches);
 
         if ($result === FALSE) {
-            error('covert_call_number: Regular expression matching failed.');
+            error('convert_call_number: Regular expression matching failed.');
         } else if ($result === 0) {
-            error('covert_call_number: Call number format error. Expected class.');
+            error('convert_call_number: Call number format error. Expected class.');
         }
 
         $class = $matches[0];
@@ -1034,7 +1031,7 @@ application/x-httpd-php api.php ( PHP script text )
         $result = preg_match('([0-9]*\.?[0-9]+)', $call_number, $matches);
 
         if ($result === FALSE) {
-            error('covert_call_number: Regular expression matching failed.');
+            error('convert_call_number: Regular expression matching failed.');
         } else if ($result === 0) {
             // We should have no more parts.
             return $class;
@@ -1046,7 +1043,7 @@ application/x-httpd-php api.php ( PHP script text )
         $result = preg_match_all('(\.[a-zA-Z]+[0-9]+)', $call_number, $matches);
 
         if ($result === FALSE) {
-            error('covert_call_number: Regular expression matching failed.');
+            error('convert_call_number: Regular expression matching failed.');
         }
 
         $cutter1 = '';
@@ -1243,6 +1240,13 @@ application/x-httpd-php api.php ( PHP script text )
         $sql = 'SELECT * FROM aisle WHERE floor = ? AND aisle_area IS NULL';
         $floor['aisles'] = get_data($con, $sql, 'i', $fid);
 
+        foreach ($floor['aisles'] as &$aisle) {
+            $sql = 'SELECT * FROM call_range WHERE aisle = ?';
+            $aisle['call_ranges'] = get_data($con, $sql, 'i', $aisle['aisle_id']);
+        }
+
+        unset($aisle);
+
         // Fetch all aisles areas
         $sql = 'SELECT * FROM aisle_area WHERE floor = ?';
         $floor['aisle_areas'] = get_data($con, $sql, 'i', $fid);
@@ -1254,6 +1258,13 @@ application/x-httpd-php api.php ( PHP script text )
             // Fetch all aisles belonging to that aisle area
             $sql = 'SELECT * FROM aisle WHERE floor = ? AND aisle_area = ?';
             $aisle_area['aisles'] = get_data($con, $sql, 'ii', $fid, $aid);
+
+            foreach ($aisle_area['aisles'] as &$aisle) {
+                $sql = 'SELECT * FROM call_range WHERE aisle = ?';
+                $aisle['call_ranges'] = get_data($con, $sql, 'i', $aisle['aisle_id']);
+            }
+
+            unset($aisle);
         }
 
         return $floor;
@@ -1282,7 +1293,7 @@ application/x-httpd-php api.php ( PHP script text )
             error("Invalid token.");
         }
 
-        $time = $result[0]->expire_date;
+        $time = $result[0]['expire_date'];
         $curr_time = time();
 
         // Check token validity.
@@ -1290,9 +1301,9 @@ application/x-httpd-php api.php ( PHP script text )
             error("Token expired. Please login again.");
         } else {
             // If valid, refresh token duration.
-            $sql = "UPDATE token SET expire_date = ? WHERE token_id = ?";
-            $updated_time = $curr_time + TOKEN_VALID_DURATION;
-            run_query($con, $sql, "ii", $updated_time, $result[0]->token_id);
+            $sql = 'UPDATE token SET expire_date = ? WHERE token_id = ?';
+            $updated_time = $curr_time + $TOKEN_VALID_DURATION;
+            run_query($con, $sql, "ii", $updated_time, $result[0]['token_id']);
         }
     }
 
