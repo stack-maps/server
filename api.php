@@ -704,7 +704,7 @@ application/x-httpd-php api.php ( PHP script text )
 
         // Delete library.
         $sql = 'DELETE FROM library WHERE library_id = ?';
-        $run_query($con, $sql, 'i', $library_id);
+        run_query($con, $sql, 'i', $library_id);
 
         // Close database.
         $con->close();
