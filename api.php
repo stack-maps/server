@@ -118,18 +118,18 @@ application/x-httpd-php api.php ( PHP script text )
         check_token($con, $_POST['token']);
         
         // Parse parameters.
-        $name = $_POST['name'];
+        $library_name = $_POST['library_name'];
 
         // Check if the name is already taken.
         $sql = 'SELECT library_id FROM library WHERE library_name = ?';
 
-        if (count(get_data($con, $sql, 's', $name)) > 0) {
+        if (count(get_data($con, $sql, 's', $library_name)) > 0) {
             error("create_library: Library name is already taken.");
         }
 
         // Add the new library.
         $sql = 'INSERT INTO library (library_name) VALUES (?)';
-        run_query($con, $sql, 's', $name);
+        run_query($con, $sql, 's', $library_name);
 
         // Fetch the newly created library id.
         $sql = 'SELECT library_id FROM library ORDER BY library_id DESC LIMIT 1';
@@ -140,7 +140,7 @@ application/x-httpd-php api.php ( PHP script text )
 
         // Send response.
         $response['success'] = TRUE;
-        $response['id'] = $result[0]->library_id;
+        $response['id'] = $result[0]['library_id'];
 
         echo json_encode($response);
     }
@@ -196,7 +196,7 @@ application/x-httpd-php api.php ( PHP script text )
 
         // Send response.
         $response['success'] = TRUE;
-        $response['id'] = $result[0]->floor_id;
+        $response['id'] = $result[0]['floor_id'];
 
         echo json_encode($response);
     }
@@ -704,7 +704,7 @@ application/x-httpd-php api.php ( PHP script text )
 
         // Delete library.
         $sql = 'DELETE FROM library WHERE library_id = ?';
-        $run_query($con, $sql, 'i', $library_id);
+        run_query($con, $sql, 'i', $library_id);
 
         // Close database.
         $con->close();
