@@ -196,7 +196,7 @@ application/x-httpd-php api.php ( PHP script text )
 
         // Send response.
         $response['success'] = TRUE;
-        $response['id'] = $result[0]->floor_id;
+        $response['id'] = $result[0]['floor_id'];
 
         echo json_encode($response);
     }
